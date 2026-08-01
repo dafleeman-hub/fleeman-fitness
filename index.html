@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#111827" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Fleeman Fit" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>Fleeman Fitness</title>
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">PERSONAL TRAINING</p>
+        <h1>Fleeman Fitness</h1>
+      </div>
+      <button id="installButton" class="ghost-button hidden">Install</button>
+    </header>
+
+    <nav class="tabs" aria-label="Primary">
+      <button class="tab active" data-view="homeView">Today</button>
+      <button class="tab" data-view="programsView">Programs</button>
+      <button class="tab" data-view="builderView">Workouts</button>
+      <button class="tab" data-view="historyView">History</button>
+      <button class="tab" data-view="settingsView">Settings</button>
+    </nav>
+
+    <section id="homeView" class="view active">
+      <div class="hero-card">
+        <p class="eyebrow">READY WHEN YOU ARE</p>
+        <h2 id="todayWorkoutName">Choose a workout</h2>
+        <p id="todayWorkoutSummary">Select one of your saved workouts to begin.</p>
+        <button id="startWorkoutButton" class="primary-button">Choose workout</button>
+      </div>
+
+      <div class="section-heading">
+        <h3>Quick start</h3>
+      </div>
+      <div id="quickWorkoutList" class="card-list"></div>
+
+      <div class="section-heading">
+        <h3>Recent progress</h3>
+      </div>
+      <div id="progressSummary" class="stats-grid"></div>
+    </section>
+
+    <section id="programsView" class="view">
+      <div class="section-heading">
+        <div><p class="eyebrow">TRAINING BLOCKS</p><h2>Programs</h2></div>
+        <button id="newMesocycleButton" class="primary-button compact">Create new</button>
+      </div>
+      <div id="activeMesocycle"></div>
+      <div class="section-heading"><h3>Draft mesocycles</h3></div>
+      <div id="draftMesocycles" class="card-list"></div>
+      <div class="section-heading"><h3>Completed mesocycles</h3></div>
+      <div id="completedMesocycles" class="card-list"></div>
+    </section>
+
+    <section id="builderView" class="view">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">PROGRAM LIBRARY</p>
+          <h2>Your workouts</h2>
+        </div>
+        <button id="newWorkoutButton" class="primary-button compact">New</button>
+      </div>
+      <div id="workoutLibrary" class="card-list"></div>
+    </section>
+
+    <section id="historyView" class="view">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">TRAINING LOG</p>
+          <h2>Workout history</h2>
+        </div>
+      </div>
+      <div id="historyList" class="card-list"></div>
+    </section>
+
+    <section id="settingsView" class="view">
+      <div class="panel">
+        <h2>Settings</h2>
+        <label>
+          Default weight increase
+          <select id="defaultIncrement">
+            <option value="2.5">2.5 lb</option>
+            <option value="5" selected>5 lb</option>
+            <option value="10">10 lb</option>
+          </select>
+        </label>
+        <label>
+          Default rest time
+          <select id="defaultRest">
+            <option value="60">60 seconds</option>
+            <option value="90" selected>90 seconds</option>
+            <option value="120">120 seconds</option>
+            <option value="180">180 seconds</option>
+          </select>
+        </label>
+        <button id="exportButton" class="secondary-button">Export backup</button>
+        <label class="file-button">
+          Import backup
+          <input id="importInput" type="file" accept="application/json" />
+        </label>
+        <button id="resetButton" class="danger-button">Reset all data</button>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="workoutDialog">
+    <form method="dialog" id="workoutForm" class="dialog-card">
+      <div class="dialog-header">
+        <h2 id="workoutDialogTitle">New workout</h2>
+        <button value="cancel" class="icon-button" aria-label="Close">×</button>
+      </div>
+      <input type="hidden" id="editingWorkoutId" />
+      <label>
+        Workout name
+        <input id="workoutNameInput" required placeholder="Push A" />
+      </label>
+      <label>
+        Notes
+        <input id="workoutNotesInput" placeholder="Chest, shoulders, triceps" />
+      </label>
+      <div class="section-heading">
+        <h3>Exercises</h3>
+        <button type="button" id="addExerciseButton" class="secondary-button compact">Add exercise</button>
+      </div>
+      <div id="exerciseEditor"></div>
+      <button type="submit" class="primary-button">Save workout</button>
+    </form>
+  </dialog>
+
+  <dialog id="recoveryDialog">
+    <div class="dialog-card recovery-dialog">
+      <div class="dialog-header sticky">
+        <div>
+          <p class="eyebrow">RECOVERY CHECK-IN</p>
+          <h2>How sore are you?</h2>
+        </div>
+        <button id="closeRecoveryButton" class="icon-button" aria-label="Close">×</button>
+      </div>
+      <p class="small-note">Rate only the muscles trained today. Review your answers and the proposed changes before starting.</p>
+      <div id="sorenessGrid" class="soreness-grid"></div>
+      <div id="recoveryRecommendation" class="recommendation-panel" aria-live="polite"></div>
+      <div class="recovery-actions">
+        <button id="startRecommendedButton" class="primary-button">Accept adjusted workout</button>
+        <button id="skipSoreMusclesButton" class="secondary-button hidden">Skip highly sore muscles</button>
+        <button id="startOriginalButton" class="secondary-button">Continue as originally planned</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="mesocycleDialog">
+    <div class="dialog-card mesocycle-dialog">
+      <div class="dialog-header sticky">
+        <div><p class="eyebrow">MESOCYCLE BUILDER</p><h2 id="mesocycleDialogTitle">Create mesocycle</h2></div>
+        <button id="closeMesocycleButton" class="icon-button" aria-label="Close">×</button>
+      </div>
+      <div id="mesocycleStepIndicator" class="step-indicator"></div>
+      <div id="mesocycleBuilderBody"></div>
+      <div id="mesocycleBuilderActions" class="builder-actions"></div>
+    </div>
+  </dialog>
+
+  <dialog id="sessionDialog">
+    <div class="dialog-card session-dialog">
+      <div class="dialog-header sticky">
+        <div>
+          <p class="eyebrow">LIVE WORKOUT</p>
+          <h2 id="sessionWorkoutName"></h2>
+        </div>
+        <button id="closeSessionButton" class="icon-button" aria-label="Close">×</button>
+      </div>
+      <div id="sessionExerciseList"></div>
+      <button id="finishWorkoutButton" class="primary-button">Finish workout</button>
+    </div>
+  </dialog>
+
+  <template id="exerciseEditorTemplate">
+    <div class="exercise-editor-card">
+      <div class="exercise-editor-top">
+        <input class="exercise-name" placeholder="Exercise name" required />
+        <button type="button" class="remove-exercise icon-button">×</button>
+      </div>
+      <div class="form-grid">
+        <label>Sets<input class="exercise-sets" type="number" min="1" max="10" value="3" /></label>
+        <label>Min reps<input class="exercise-min-reps" type="number" min="1" max="50" value="8" /></label>
+        <label>Max reps<input class="exercise-max-reps" type="number" min="1" max="50" value="12" /></label>
+        <label>Start weight<input class="exercise-weight" type="number" min="0" step="2.5" value="0" /></label>
+      </div>
+    </div>
+  </template>
+
+  <script src="app.js"></script>
+  <script src="mesocycles.js"></script>
+</body>
+</html>
