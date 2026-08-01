@@ -47,7 +47,7 @@
       </div>
 
       <div class="section-heading">
-        <h3>Quick start</h3>
+        <div><h3 id="quickStartHeading">Quick Start Programs</h3><p id="quickStartDescription" class="small-note">Choose a training focus and Fleeman Fitness will build the full week for you.</p></div>
       </div>
       <div id="quickWorkoutList" class="card-list"></div>
 
@@ -213,6 +213,14 @@
     </div>
   </dialog>
 
+  <dialog id="programPreviewDialog" aria-labelledby="programPreviewTitle">
+    <div class="dialog-card preview-dialog-card">
+      <div class="dialog-header sticky"><div><p class="eyebrow">PROGRAM PREVIEW</p><h2 id="programPreviewTitle"></h2></div><button id="closeProgramPreviewButton" class="icon-button" aria-label="Close program preview">×</button></div>
+      <div id="programPreviewContent" class="workout-preview-content"></div>
+      <div class="preview-actions"><button id="buildPreviewedProgramButton" class="primary-button">Build This Mesocycle</button><button id="backProgramPreviewButton" class="secondary-button">Back</button></div>
+    </div>
+  </dialog>
+
   <dialog id="sessionDialog">
     <div class="dialog-card session-dialog">
       <div class="dialog-header sticky">
@@ -246,6 +254,7 @@
   </template>
 
   <script src="exercise-library.js"></script>
+  <script src="program-templates.js"></script>
   <script src="app.js"></script>
   <script src="mesocycles.js"></script>
 </body>

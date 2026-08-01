@@ -56,7 +56,7 @@ function defaultSchedule(count) {
 function openMesocycleBuilder(mesocycle = null) {
   mesoBuilder = structuredClone(mesocycle || newMesocycle());
   mesoStep = 1;
-  document.querySelector("#mesocycleDialogTitle").textContent = mesocycle ? "Edit mesocycle" : "Create mesocycle";
+  document.querySelector("#mesocycleDialogTitle").textContent = mesocycle?.sourceTemplateId ? "Build mesocycle" : mesocycle ? "Edit mesocycle" : "Create mesocycle";
   renderMesoBuilder();
   document.querySelector("#mesocycleDialog").showModal();
 }
@@ -86,6 +86,8 @@ function renderMesoBasics(body) {
   body.innerHTML = `<h3>Step 1: Basic information</h3>
     <div class="panel">
       <label>Mesocycle name<input id="mesoName" value="${escapeHtml(mesoBuilder.name)}" placeholder="Summer Hypertrophy Block" required></label>
+      <p class="small-note">You can edit this plan before starting.</p>
+      <div class="exercise-actions"><button type="button" class="secondary-button meso-date-choice" data-date-choice="today">Start today</button><button type="button" class="secondary-button meso-date-choice" data-date-choice="monday">Start next Monday</button></div>
       <label>Start date<input id="mesoStartDate" type="date" value="${mesoBuilder.startDate}"></label>
       <label>Training weeks<select id="mesoWeeks">${[2,3,4,5,6,7,8,9,10,11,12].map(n => `<option value="${n}" ${n===mesoBuilder.trainingWeeks?"selected":""}>${n} weeks${n>8||n<4?" (custom)":""}</option>`).join("")}</select></label>
       <label><span>Include a deload week</span><select id="mesoDeload"><option value="no">No</option><option value="yes" ${mesoBuilder.includeDeload?"selected":""}>Yes — final week</option></select></label>
@@ -95,6 +97,7 @@ function renderMesoBasics(body) {
     const total = Number(document.querySelector("#mesoWeeks").value) + (document.querySelector("#mesoDeload").value === "yes" ? 1 : 0);
     document.querySelector("#mesoTotalPreview").textContent = `${total} weeks total`;
   });
+  document.querySelectorAll(".meso-date-choice").forEach(button=>button.onclick=()=>{const date=new Date();if(button.dataset.dateChoice==="monday"){const days=(8-date.getDay())%7||7;date.setDate(date.getDate()+days);}document.querySelector("#mesoStartDate").value=date.toISOString().slice(0,10);});
 }
 
 function renderMesoSchedule(body) {
@@ -132,15 +135,12 @@ function renderMesoWorkouts(body) {
   const holder = document.querySelector("#mesoWorkoutDays");
   mesoBuilder.schedule.forEach((slot, dayIndex) => {
     const card = document.createElement("div"); card.className = "meso-workout-card";
-    const focusMuscle = slot.focusMuscle || slot.workout.exercises.find(exercise => (exercise.primaryMuscle || exercise.muscle) && (exercise.primaryMuscle || exercise.muscle) !== "Other")?.primaryMuscle || slot.workout.exercises.find(exercise => exercise.muscle !== "Other")?.muscle || "";
     card.innerHTML = `<p class="eyebrow">${mesoWeekdays[slot.dayIndex]}</p>
-      <label>Target muscle group<select class="focus-muscle-select"><option value="">Choose muscle group</option>${Object.keys(EXERCISE_CATALOG).map(muscle=>`<option value="${escapeHtml(muscle)}" ${muscle===focusMuscle?"selected":""}>${escapeHtml(muscle)}</option>`).join("")}</select></label>
       <label>Notes<input class="day-notes" value="${escapeHtml(slot.workout.notes||"")}"></label>
       <div class="meso-exercises"></div><div class="exercise-actions"><button class="secondary-button preview-meso-day" aria-label="Preview ${escapeHtml(slot.workout.name)}">Preview</button><button class="secondary-button browse-meso-library">Browse Exercise Library</button><button class="secondary-button add-meso-exercise">Create Custom</button></div>`;
-    card.querySelector(".focus-muscle-select").onchange = event => { slot.focusMuscle = event.target.value; if(event.target.value)slot.workout.name=`${event.target.value} Workout`; renderMesoBuilder(); };
     card.querySelector(".day-notes").oninput = e => slot.workout.notes=e.target.value;
     card.querySelector(".add-meso-exercise").onclick = () => { slot.workout.exercises.push(blankMesoExercise()); renderMesoBuilder(); };
-    card.querySelector(".browse-meso-library").onclick = () => openExerciseLibrary({ type:"mesocycle", slot, muscle:slot.focusMuscle || "" });
+    card.querySelector(".browse-meso-library").onclick = () => openExerciseLibrary({ type:"mesocycle", slot });
     card.querySelector(".preview-meso-day").onclick = event => openWorkoutPreview(slot.workout, { trigger: event.currentTarget, startAction: null });
     const exHolder=card.querySelector(".meso-exercises");
     slot.workout.exercises.forEach((exercise, exerciseIndex)=>exHolder.appendChild(mesoExerciseEditor(exercise,slot,exerciseIndex)));
@@ -150,10 +150,11 @@ function renderMesoWorkouts(body) {
 
 function mesoExerciseEditor(exercise, slot, index) {
   const card=document.createElement("div"); card.className="exercise-meso-card";
-  const targetMuscle=slot.focusMuscle||exercise.primaryMuscle||exercise.muscle||"";
+  const targetMuscle=exercise.targetMuscle||exercise.primaryMuscle||(exercise.muscle!=="Other"?exercise.muscle:"")||"";
   const availableExercises=allExerciseDefinitions().filter(definition=>!targetMuscle||definition.primaryMuscle===targetMuscle);
   const currentIsListed=availableExercises.some(definition=>definition.id===exercise.libraryExerciseId);
-  card.innerHTML=`<label>Exercise<select class="library-exercise-select"><option value="">Choose an exercise${targetMuscle?` for ${escapeHtml(targetMuscle)}`:""}</option>${exercise.name&&!currentIsListed?`<option value="__current__" selected>${escapeHtml(exercise.name)} (current custom exercise)</option>`:""}${availableExercises.map(definition=>`<option value="${escapeHtml(definition.id)}" ${definition.id===exercise.libraryExerciseId?"selected":""}>${escapeHtml(definition.name)}</option>`).join("")}</select></label>
+  card.innerHTML=`<label>Target muscle group<select class="exercise-target-muscle"><option value="">Choose muscle group</option>${Object.keys(EXERCISE_CATALOG).map(muscle=>`<option value="${escapeHtml(muscle)}" ${muscle===targetMuscle?"selected":""}>${escapeHtml(muscle)}</option>`).join("")}</select></label>
+    <label>Exercise<select class="library-exercise-select"><option value="">Choose an exercise${targetMuscle?` for ${escapeHtml(targetMuscle)}`:""}</option>${exercise.name&&!currentIsListed?`<option value="__current__" selected>${escapeHtml(exercise.name)} (current custom exercise)</option>`:""}${availableExercises.map(definition=>`<option value="${escapeHtml(definition.id)}" ${definition.id===exercise.libraryExerciseId?"selected":""}>${escapeHtml(definition.name)}</option>`).join("")}</select></label>
     <div class="form-grid"><label>Muscle<select data-field="muscle">${mesoMuscles.map(m=>`<option ${m===exercise.muscle?"selected":""}>${m}</option>`).join("")}</select></label>
     <label>Starting sets<input data-field="sets" type="number" min="1" max="10" value="${exercise.sets}"></label>
     <label>Min reps<input data-field="minReps" type="number" min="1" value="${exercise.minReps}"></label>
@@ -163,7 +164,8 @@ function mesoExerciseEditor(exercise, slot, index) {
     <label>Rest seconds<input data-field="rest" type="number" min="0" value="${exercise.rest}"></label>
     <label>Weight increase<input data-field="increment" type="number" min="0" step="2.5" value="${exercise.increment}"></label></div>
     <div class="exercise-actions"><button class="secondary-button up" ${index===0?"disabled":""}>↑</button><button class="secondary-button down" ${index===slot.workout.exercises.length-1?"disabled":""}>↓</button><button class="secondary-button duplicate">Duplicate</button><button class="secondary-button swap">Swap</button><button class="danger-button remove">Remove</button></div>`;
-  card.querySelector(".library-exercise-select").onchange=event=>{if(!event.target.value||event.target.value==="__current__")return;const definition=allExerciseDefinitions().find(item=>item.id===event.target.value);if(!definition)return;slot.workout.exercises[index]=exerciseDefinitionToPrescription(definition);markExerciseUsed(definition.id);renderMesoBuilder();};
+  card.querySelector(".exercise-target-muscle").onchange=event=>{const muscle=event.target.value;exercise.targetMuscle=muscle;exercise.primaryMuscle=muscle;exercise.muscle=muscle||"Other";if(exercise.libraryExerciseId&&muscle!==allExerciseDefinitions().find(item=>item.id===exercise.libraryExerciseId)?.primaryMuscle){exercise.libraryExerciseId=null;exercise.name="";}renderMesoBuilder();};
+  card.querySelector(".library-exercise-select").onchange=event=>{if(!event.target.value||event.target.value==="__current__")return;const definition=allExerciseDefinitions().find(item=>item.id===event.target.value);if(!definition)return;slot.workout.exercises[index]={...exerciseDefinitionToPrescription(definition),targetMuscle:definition.primaryMuscle};markExerciseUsed(definition.id);renderMesoBuilder();};
   card.querySelectorAll("[data-field]").forEach(input=>input.oninput=e=>{const f=e.target.dataset.field; exercise[f]=["name","muscle"].includes(f)?e.target.value:Number(e.target.value);});
   card.querySelector(".up").onclick=()=>moveExercise(slot,index,-1); card.querySelector(".down").onclick=()=>moveExercise(slot,index,1);
   card.querySelector(".duplicate").onclick=()=>{slot.workout.exercises.splice(index+1,0,copyExercise(exercise));renderMesoBuilder();};

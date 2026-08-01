@@ -1,6 +1,6 @@
 
-const CACHE = "fleeman-fitness-v17";
-const ASSETS = ["./", "./index.html", "./styles.css", "./exercise-library.js", "./app.js", "./mesocycles.js", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png"];
+const CACHE = "fleeman-fitness-v20";
+const ASSETS = ["./", "./index.html", "./styles.css", "./exercise-library.js", "./program-templates.js", "./app.js", "./mesocycles.js", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png"];
 self.addEventListener("install", event => event.waitUntil(
   caches.open(CACHE).then(cache => cache.addAll(ASSETS))
 ));

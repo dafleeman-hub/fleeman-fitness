@@ -328,6 +328,8 @@ dialog::backdrop { background: rgba(0,0,0,.75); backdrop-filter: blur(6px); }
 .favorite-button[aria-pressed="true"] { color: #fbbf24; border-color: #fbbf24; }
 .exercise-detail-list { display: grid; gap: 8px; }
 .exercise-detail-list p, .exercise-detail-list ul { margin: 0; }
+.program-template-card .workout-card-top { align-items: flex-start; }
+.preview-exercise summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
 .mesocycle-card, .meso-workout-card, .review-card {
   background: linear-gradient(180deg, rgba(31,41,55,.98), rgba(17,24,39,.98));
   border: 1px solid var(--border); border-radius: 18px; padding: 16px; margin-bottom: 12px;

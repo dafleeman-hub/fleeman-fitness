@@ -1,6 +1,6 @@
 
 const STORAGE_KEY = "fleemanFitnessDataV1";
-const APP_VERSION = "0.5.4-beta";
+const APP_VERSION = "0.6.2-beta";
 let previewReturnFocus = null;
 let previewScrollPosition = 0;
 const defaultData = {
@@ -60,6 +60,8 @@ let updateReloading = false;
 let exerciseLibraryContext = { type: "browse" };
 let exerciseLibraryFilters = { search: "", muscle: "", equipment: "", type: "", favorites: false, recent: false };
 let exercisePreviewReturnFocus = null;
+let previewedProgramTemplate = null;
+let programPreviewReturnFocus = null;
 
 const muscleGroups = ["chest", "back", "shoulders", "biceps", "triceps", "quads", "hamstrings", "glutes", "calves", "core", "traps", "forearms", "adductors", "abductors", "lower back"];
 const muscleLabels = {
@@ -211,7 +213,8 @@ function renderHome() {
 
   const quick = document.querySelector("#quickWorkoutList");
   quick.innerHTML = "";
-  data.workouts.slice(0, 4).forEach(w => quick.appendChild(workoutCard(w, true)));
+  PREMADE_PROGRAM_TEMPLATES.forEach(template => quick.appendChild(programTemplateCard(template)));
+  document.querySelector("#quickStartHeading").textContent = data.mesocycles?.active ? "Start Something New" : "Quick Start Programs";
 
   const completedSets = data.history.reduce((sum, h) =>
     sum + h.exercises.reduce((s, e) => s + e.sets.filter(x => x.done).length, 0), 0);
@@ -235,6 +238,59 @@ function calculatePRs() {
   }));
   return Object.keys(best).length;
 }
+
+function programTemplateCard(template) {
+  const card=document.createElement("article");card.className="workout-card program-template-card";
+  card.innerHTML=`<div class="workout-card-top"><div><h3>${escapeHtml(template.name)}</h3><p>${escapeHtml(template.description)}</p><p class="small-note">${template.daysPerWeek} days per week • ${escapeHtml(template.focus)} • Approximately ${escapeHtml(template.duration)} per workout</p></div></div><div class="card-actions workout-card-actions horizontal-scroll-row"><button class="secondary-button compact preview-program">Preview</button><button class="primary-button compact build-program">Build Mesocycle</button></div>`;
+  card.querySelector(".preview-program").onclick=event=>openProgramPreview(template,event.currentTarget);
+  card.querySelector(".build-program").onclick=()=>buildProgramMesocycle(template);
+  return card;
+}
+
+function latestTemplateStartingWeight(definition) {
+  for (const session of data.history) {
+    const result=session.exercises.find(exercise=>exercise.libraryExerciseId===definition.id||normalizedExerciseName(exercise.name)===normalizedExerciseName(definition.name));
+    if(result&&Number(result.weight)>0)return Number(result.weight);
+  }
+  for (const workout of data.workouts) {
+    const exercise=workout.exercises.find(item=>item.libraryExerciseId===definition.id&&Number(item.startWeight)>0);
+    if(exercise)return Number(exercise.startWeight);
+  }
+  return 0;
+}
+
+function templateExercisePrescription(item) {
+  const definition=COMMERCIAL_GYM_EXERCISES.find(exercise=>exercise.id===item.exerciseId);
+  if(!definition)return null;
+  const prescription=exerciseDefinitionToPrescription(definition);
+  prescription.sets=Number(item.sets||definition.defaults.sets);
+  prescription.startWeight=latestTemplateStartingWeight(definition);
+  return prescription;
+}
+
+function mesocycleFromProgramTemplate(template) {
+  return {id:crypto.randomUUID(),name:template.name,startDate:new Date().toISOString().slice(0,10),trainingWeeks:4,includeDeload:false,totalWeeks:4,daysPerWeek:template.daysPerWeek,status:"draft",createdAt:new Date().toISOString(),sourceTemplateId:template.id,sourceTemplateVersion:template.version,progress:{week:1,slot:0,completed:[],skipped:[],needsWeekReview:false},schedule:template.schedule.map((day,index)=>({id:crypto.randomUUID(),dayIndex:day.dayIndex,order:index,focusMuscle:day.workout.focus,workout:{id:crypto.randomUUID(),name:day.workout.name,notes:day.workout.focus,exercises:day.workout.exercises.map(templateExercisePrescription).filter(Boolean)}}))};
+}
+
+function programWeeklySets(template) {
+  const totals={};template.schedule.forEach(day=>day.workout.exercises.forEach(item=>{const exercise=COMMERCIAL_GYM_EXERCISES.find(definition=>definition.id===item.exerciseId);if(exercise)totals[exercise.primaryMuscle]=(totals[exercise.primaryMuscle]||0)+Number(item.sets||exercise.defaults.sets);}));return totals;
+}
+
+function estimatedProgramWorkoutMinutes(workout) {
+  const prescriptions=workout.exercises.map(templateExercisePrescription).filter(Boolean);
+  return Math.max(45,workoutPreviewTotals({exercises:prescriptions}).estimatedMinutes);
+}
+
+function openProgramPreview(template,trigger) {
+  previewedProgramTemplate=template;programPreviewReturnFocus=trigger;
+  const days=new Map(template.schedule.map(day=>[day.dayIndex,day]));const weekdayNames=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  document.querySelector("#programPreviewTitle").textContent=template.name;
+  document.querySelector("#programPreviewContent").innerHTML=`<p>${escapeHtml(template.description)}</p><p><strong>${template.daysPerWeek} days per week</strong> • ${escapeHtml(template.focus)} • ${escapeHtml(template.duration)} per workout</p><h3>Weekly schedule</h3>${weekdayNames.map((name,index)=>{const day=days.get(index);if(!day)return `<div class="preview-exercise"><h3>${name}: Rest</h3></div>`;return `<details class="preview-exercise" ${index===1?"open":""}><summary><strong>${name}: ${escapeHtml(day.workout.name)}</strong> • about ${estimatedProgramWorkoutMinutes(day.workout)} min</summary>${day.workout.exercises.map(item=>{const exercise=COMMERCIAL_GYM_EXERCISES.find(definition=>definition.id===item.exerciseId);return exercise?`<p>${escapeHtml(exercise.name)} — ${item.sets||exercise.defaults.sets} sets, ${exercise.defaults.minReps}–${exercise.defaults.maxReps} reps, RIR ${exercise.defaults.targetRIR}</p>`:"";}).join("")}</details>`;}).join("")}<h3>Estimated weekly sets</h3><p>${Object.entries(programWeeklySets(template)).map(([muscle,sets])=>`${escapeHtml(muscle)}: ${sets}`).join(" • ")}</p><p class="small-note">Previewing does not create or modify a mesocycle.</p>`;
+  document.querySelector("#programPreviewDialog").showModal();document.querySelector("#closeProgramPreviewButton").focus();
+}
+
+function closeProgramPreview(){const dialog=document.querySelector("#programPreviewDialog");if(dialog.open)dialog.close();programPreviewReturnFocus?.focus();}
+function buildProgramMesocycle(template){if(data.mesocycles?.active)alert("You already have an active mesocycle. This new program will open as a draft and cannot replace the active mesocycle unless you end or return the current one to drafts.");closeProgramPreview();openMesocycleBuilder(mesocycleFromProgramTemplate(template));}
 
 function workoutCard(workout, quick = false) {
   const totals = workoutPreviewTotals(workout);
@@ -811,6 +867,10 @@ document.querySelector("#favoritesFilterButton").onclick = () => {exerciseLibrar
 document.querySelector("#recentFilterButton").onclick = () => {exerciseLibraryFilters.recent=!exerciseLibraryFilters.recent;renderExerciseLibrary();};
 document.querySelector("#clearExerciseFiltersButton").onclick = () => {exerciseLibraryFilters={search:"",muscle:"",equipment:"",type:"",favorites:false,recent:false};document.querySelector("#exerciseLibrarySearch").value="";document.querySelector("#equipmentFilter").value="";document.querySelector("#exerciseTypeFilter").value="";renderExerciseLibrary();};
 document.querySelector("#createCustomExerciseButton").onclick = createCustomExercise;
+document.querySelector("#closeProgramPreviewButton").onclick = closeProgramPreview;
+document.querySelector("#backProgramPreviewButton").onclick = closeProgramPreview;
+document.querySelector("#buildPreviewedProgramButton").onclick = () => { if(previewedProgramTemplate)buildProgramMesocycle(previewedProgramTemplate); };
+document.querySelector("#programPreviewDialog").addEventListener("cancel",event=>{event.preventDefault();closeProgramPreview();});
 document.querySelector("#closeWorkoutPreviewButton").onclick = closeWorkoutPreview;
 document.querySelector("#workoutPreviewDialog").addEventListener("cancel", event => { event.preventDefault(); closeWorkoutPreview(); });
 document.querySelector("#previewAdjustedWorkoutButton").onclick = event => previewAdjustedWorkout(event.currentTarget);
