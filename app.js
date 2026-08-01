@@ -1,5 +1,6 @@
 
 const STORAGE_KEY = "fleemanFitnessDataV1";
+const APP_VERSION = "0.3.1-beta";
 const defaultData = {
   settings: { increment: 5, rest: 90 },
   selectedWorkoutId: "push-a",
@@ -50,6 +51,8 @@ let recommendedWorkoutId = null;
 let pendingWorkoutContext = null;
 let sorenessAnswers = {};
 let pendingSorenessPlan = null;
+let waitingServiceWorker = null;
+let updateReloading = false;
 
 const muscleGroups = ["chest", "back", "shoulders", "arms", "quads", "hamstrings", "calves", "core"];
 const muscleLabels = {
@@ -159,6 +162,21 @@ function renderAll() {
   if (typeof renderPrograms === "function") renderPrograms();
   document.querySelector("#defaultIncrement").value = data.settings.increment;
   document.querySelector("#defaultRest").value = data.settings.rest;
+  document.querySelector("#appVersion").textContent = APP_VERSION;
+  renderUpdateNotice();
+}
+
+function renderUpdateNotice() {
+  const notice = document.querySelector("#updateNotice");
+  if (!waitingServiceWorker) {
+    notice.classList.add("hidden");
+    return;
+  }
+  notice.classList.remove("hidden");
+  document.querySelector("#updateMessage").textContent = currentSession
+    ? "Update available. Finish or save your workout before updating."
+    : "A new version of Fleeman Fitness is available.";
+  document.querySelector("#updateNowButton").disabled = Boolean(currentSession);
 }
 
 function renderHome() {
@@ -424,6 +442,7 @@ function beginWorkout(id, sorenessRecord, context = pendingWorkoutContext, decis
 }
 
 function renderSession() {
+  renderUpdateNotice();
   document.querySelector("#sessionWorkoutName").textContent = currentSession.workoutName;
   const list = document.querySelector("#sessionExerciseList");
   list.innerHTML = "";
@@ -509,6 +528,7 @@ function finishWorkout() {
   data.history.unshift(finishedSession);
   if (typeof onMesocycleWorkoutFinished === "function") onMesocycleWorkoutFinished(finishedSession);
   currentSession = null;
+  renderUpdateNotice();
   document.querySelector("#sessionDialog").close();
   saveData();
 }
@@ -570,6 +590,7 @@ document.querySelector("#startOriginalButton").onclick = () => {
 document.querySelector("#closeSessionButton").onclick = () => {
   if (confirm("Close this workout? Unsaved progress will be lost.")) {
     currentSession = null;
+    renderUpdateNotice();
     document.querySelector("#sessionDialog").close();
   }
 };
@@ -651,8 +672,41 @@ document.querySelector("#installButton").onclick = async () => {
   document.querySelector("#installButton").classList.add("hidden");
 };
 
+document.querySelector("#updateNowButton").onclick = () => {
+  if (currentSession) {
+    renderUpdateNotice();
+    return;
+  }
+  if (!waitingServiceWorker || updateReloading) return;
+  updateReloading = true;
+  sessionStorage.setItem("fleemanFitnessUpdating", "1");
+  document.querySelector("#updateNowButton").disabled = true;
+  waitingServiceWorker.postMessage({ type: "SKIP_WAITING" });
+};
+
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("service-worker.js"));
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!updateReloading) return;
+    window.location.reload();
+  });
+  window.addEventListener("load", async () => {
+    const registration = await navigator.serviceWorker.register("service-worker.js");
+    if (registration.waiting && navigator.serviceWorker.controller) {
+      waitingServiceWorker = registration.waiting;
+      renderUpdateNotice();
+    }
+    registration.addEventListener("updatefound", () => {
+      const installing = registration.installing;
+      if (!installing) return;
+      installing.addEventListener("statechange", () => {
+        if (installing.state === "installed" && navigator.serviceWorker.controller) {
+          waitingServiceWorker = installing;
+          renderUpdateNotice();
+        }
+      });
+    });
+    sessionStorage.removeItem("fleemanFitnessUpdating");
+  });
 }
 
 renderAll();

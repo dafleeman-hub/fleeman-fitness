@@ -1,8 +1,8 @@
 
-const CACHE = "fleeman-fitness-v8";
+const CACHE = "fleeman-fitness-v10";
 const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./mesocycles.js", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png"];
 self.addEventListener("install", event => event.waitUntil(
-  caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())
+  caches.open(CACHE).then(cache => cache.addAll(ASSETS))
 ));
 self.addEventListener("activate", event => event.waitUntil(
   caches.keys()
@@ -11,4 +11,7 @@ self.addEventListener("activate", event => event.waitUntil(
 ));
 self.addEventListener("fetch", event => {
   event.respondWith(caches.match(event.request).then(cached => cached || fetch(event.request)));
+});
+self.addEventListener("message", event => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });

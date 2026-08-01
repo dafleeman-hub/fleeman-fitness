@@ -103,6 +103,19 @@ h3 { margin-bottom: 0; }
 .ghost-button { background: transparent; color: var(--accent-2); border: 1px solid var(--accent); }
 .compact { width: auto; padding: 10px 13px; }
 .hidden { display: none !important; }
+.update-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(249,115,22,.14);
+  border: 1px solid rgba(249,115,22,.45);
+  border-radius: 15px;
+  padding: 12px;
+  margin: -8px 0 18px;
+}
+.update-notice p { margin: 0; }
+.update-notice .primary-button { flex: 0 0 auto; }
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(3,1fr);
@@ -259,6 +272,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   .soreness-grid { grid-template-columns: 1fr; }
   .tabs { overflow-x: auto; grid-template-columns: repeat(5, minmax(72px,1fr)); }
   .choice-grid, .summary-grid { grid-template-columns: 1fr; }
+  .update-notice { align-items: stretch; flex-direction: column; }
 }
 @media (min-width: 680px) {
   .dialog-card { min-height: auto; border-radius: 24px; margin: 24px 0; }

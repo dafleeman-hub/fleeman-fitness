@@ -30,6 +30,11 @@
       <button class="tab" data-view="settingsView">Settings</button>
     </nav>
 
+    <aside id="updateNotice" class="update-notice hidden" role="status" aria-live="polite">
+      <p id="updateMessage">A new version of Fleeman Fitness is available.</p>
+      <button id="updateNowButton" class="primary-button compact">Update now</button>
+    </aside>
+
     <section id="homeView" class="view active">
       <div class="hero-card">
         <p class="eyebrow">READY WHEN YOU ARE</p>
@@ -108,6 +113,7 @@
           <input id="importInput" type="file" accept="application/json" />
         </label>
         <button id="resetButton" class="danger-button">Reset all data</button>
+        <p class="small-note">App version: <strong id="appVersion"></strong></p>
       </div>
     </section>
   </main>
