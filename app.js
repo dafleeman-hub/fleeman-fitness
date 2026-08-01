@@ -1,6 +1,6 @@
 
 const STORAGE_KEY = "fleemanFitnessDataV1";
-const APP_VERSION = "0.3.1-beta";
+const APP_VERSION = "0.3.2-beta";
 const defaultData = {
   settings: { increment: 5, rest: 90 },
   selectedWorkoutId: "push-a",
@@ -542,6 +542,7 @@ document.querySelectorAll(".tab").forEach(tab => tab.onclick = () => {
   document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
   tab.classList.add("active");
   document.querySelector(`#${tab.dataset.view}`).classList.add("active");
+  tab.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
 });
 
 document.querySelector("#startWorkoutButton").onclick = () => {
