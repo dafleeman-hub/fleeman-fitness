@@ -1,6 +1,6 @@
 
 const STORAGE_KEY = "fleemanFitnessDataV1";
-const APP_VERSION = "0.7.0-beta";
+const APP_VERSION = "0.7.2-beta";
 let previewReturnFocus = null;
 let previewScrollPosition = 0;
 const defaultData = {
@@ -16,7 +16,7 @@ const defaultData = {
   workouts: [
     {
       id: "push-a",
-      name: "Push A",
+      name: "Chest, Shoulders, and Triceps",
       notes: "Chest, shoulders, triceps",
       exercises: [
         { id: crypto.randomUUID(), name: "Barbell Bench Press", sets: 3, minReps: 8, maxReps: 10, startWeight: 135 },
@@ -27,7 +27,7 @@ const defaultData = {
     },
     {
       id: "pull-a",
-      name: "Pull A",
+      name: "Back and Biceps",
       notes: "Back and biceps",
       exercises: [
         { id: crypto.randomUUID(), name: "Lat Pulldown", sets: 3, minReps: 8, maxReps: 12, startWeight: 100 },
@@ -38,7 +38,7 @@ const defaultData = {
     },
     {
       id: "legs-a",
-      name: "Legs A",
+      name: "Quads, Hamstrings, and Calves",
       notes: "Quads, hamstrings, calves",
       exercises: [
         { id: crypto.randomUUID(), name: "Back Squat", sets: 3, minReps: 6, maxReps: 10, startWeight: 135 },
@@ -53,6 +53,7 @@ const defaultData = {
 
 let data = loadData();
 migrateExerciseReferences(data);
+if (migrateBuiltInWorkoutNames(data)) localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 let currentSession = null;
 let deferredPrompt = null;
 let pendingWorkoutId = null;
@@ -84,6 +85,50 @@ function loadData() {
   } catch {
     return structuredClone(defaultData);
   }
+}
+
+function migrateBuiltInWorkoutNames(target) {
+  let changed = false;
+  const starterNames = {
+    "push-a": ["Push A", "Chest, Shoulders, and Triceps"],
+    "pull-a": ["Pull A", "Back and Biceps"],
+    "legs-a": ["Legs A", "Quads, Hamstrings, and Calves"]
+  };
+  (target.workouts || []).forEach(workout => {
+    const update = starterNames[workout.id];
+    if (update && workout.name === update[0]) {
+      workout.name = update[1];
+      changed = true;
+    }
+  });
+
+  const legacyNames = {
+    "balanced-hypertrophy-4-day": ["Upper A", "Lower A", "Upper B", "Lower B"],
+    "upper-body-focus-4-day": ["Upper Push Focus", "Lower Maintenance", "Upper Pull Focus", "Upper Mixed"],
+    "lower-body-focus-4-day": ["Lower Quad Focus", "Upper Maintenance", "Lower Hamstring and Glute Focus", "Lower Mixed"],
+    "chest-focus-4-day": ["Chest and Triceps", "Lower Body", "Back and Biceps", "Upper Body with Chest Focus"],
+    "back-focus-4-day": ["Back and Biceps", "Lower Body", "Chest and Shoulders", "Upper Body with Back Focus"]
+  };
+  const mesocycles = [
+    ...(target.mesocycles?.drafts || []),
+    ...(target.mesocycles?.active ? [target.mesocycles.active] : []),
+    ...(target.mesocycles?.completed || [])
+  ];
+  mesocycles.forEach(mesocycle => {
+    const template = PREMADE_PROGRAM_TEMPLATES.find(item => item.id === mesocycle.sourceTemplateId);
+    const previousNames = legacyNames[mesocycle.sourceTemplateId];
+    if (!template || !previousNames || Number(mesocycle.sourceTemplateVersion || 1) >= PROGRAM_TEMPLATE_VERSION) return;
+    template.schedule.forEach((templateDay, index) => {
+      const savedDay = (mesocycle.schedule || []).find(day => Number(day.dayIndex) === Number(templateDay.dayIndex)) || mesocycle.schedule?.[index];
+      if (savedDay?.workout?.name === previousNames[index]) {
+        savedDay.workout.name = templateDay.workout.name;
+        changed = true;
+      }
+    });
+    mesocycle.sourceTemplateVersion = PROGRAM_TEMPLATE_VERSION;
+    changed = true;
+  });
+  return changed;
 }
 
 function isValidBackup(candidate) {
@@ -323,7 +368,7 @@ function templateExercisePrescription(item) {
 }
 
 function mesocycleFromProgramTemplate(template) {
-  return {id:crypto.randomUUID(),name:template.name,startDate:new Date().toISOString().slice(0,10),trainingWeeks:4,includeDeload:false,totalWeeks:4,daysPerWeek:template.daysPerWeek,status:"draft",createdAt:new Date().toISOString(),sourceTemplateId:template.id,sourceTemplateVersion:template.version,progress:{week:1,slot:0,completed:[],skipped:[],needsWeekReview:false},schedule:template.schedule.map((day,index)=>({id:crypto.randomUUID(),dayIndex:day.dayIndex,order:index,focusMuscle:day.workout.focus,workout:{id:crypto.randomUUID(),name:day.workout.name,notes:day.workout.focus,exercises:day.workout.exercises.map(templateExercisePrescription).filter(Boolean)}}))};
+  return {id:crypto.randomUUID(),name:template.name,startDate:new Date().toISOString().slice(0,10),trainingWeeks:4,includeDeload:false,totalWeeks:4,daysPerWeek:template.daysPerWeek,status:"draft",createdAt:new Date().toISOString(),sourceTemplateId:template.id,sourceTemplateVersion:PROGRAM_TEMPLATE_VERSION,progress:{week:1,slot:0,completed:[],skipped:[],needsWeekReview:false},schedule:template.schedule.map((day,index)=>({id:crypto.randomUUID(),dayIndex:day.dayIndex,order:index,focusMuscle:day.workout.focus,workout:{id:crypto.randomUUID(),name:day.workout.name,notes:day.workout.focus,exercises:day.workout.exercises.map(templateExercisePrescription).filter(Boolean)}}))};
 }
 
 function programWeeklySets(template) {

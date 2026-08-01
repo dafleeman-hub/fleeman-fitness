@@ -219,8 +219,9 @@ function ensureWorkoutTemplate(workout) {
 
 function mesoTotalWorkouts(meso){return meso.totalWeeks*meso.schedule.length;}
 function mesoDoneCount(meso){return meso.progress.completed.length+meso.progress.skipped.length;}
-function currentMesoPosition(meso){const done=mesoDoneCount(meso);return {week:Math.floor(done/meso.schedule.length)+1,slot:done%meso.schedule.length};}
-function nextMesoSlot(meso){const p=currentMesoPosition(meso);return p.week>meso.totalWeeks?null:{...p,plan:meso.schedule[p.slot]};}
+function mesoSlotResolved(meso,week,slot){return meso.progress.completed.some(item=>item.week===week&&item.slot===slot)||meso.progress.skipped.some(item=>item.week===week&&item.slot===slot);}
+function nextMesoSlot(meso){for(let week=1;week<=meso.totalWeeks;week++){for(let slot=0;slot<meso.schedule.length;slot++){if(!mesoSlotResolved(meso,week,slot))return{week,slot,plan:meso.schedule[slot]};}}return null;}
+function currentMesoPosition(meso){const next=nextMesoSlot(meso);return next?{week:next.week,slot:next.slot}:{week:meso.totalWeeks+1,slot:0};}
 function isDeloadWeek(meso,week){return meso.includeDeload&&week===meso.totalWeeks;}
 
 function renderPrograms() {
@@ -245,6 +246,9 @@ function renderMesoCollection(selector,items,type){const el=document.querySelect
 function workoutForMesoSlot(meso,next,persist=true){let workout=structuredClone(next.plan.workout);if(isDeloadWeek(meso,next.week)){workout.id=`${workout.id}-deload-${meso.id}`;workout.name=`Deload — ${workout.name}`;workout.exercises=workout.exercises.map(e=>({...e,id:`${e.id}-deload`,sets:Math.ceil(e.sets/2),startWeight:Math.round(e.startWeight*.85/2.5)*2.5,targetRir:Math.max(4,e.targetRir)}));}if(persist)ensureWorkoutTemplate(workout);return workout;}
 function previewNextMesoWorkout(meso,trigger){const next=nextMesoSlot(meso);if(!next)return;const workout=workoutForMesoSlot(meso,next,false);const deload=isDeloadWeek(meso,next.week);openWorkoutPreview(workout,{trigger,originalWorkout:deload?next.plan.workout:null,adjustmentReason:deload?"Deload week: sets and load are reduced and target RIR is increased.":"Current mesocycle prescription with progression and approved pain recommendations.",context:{mesocycleId:meso.id,week:next.week,slot:next.slot,plannedWorkoutId:next.plan.workout.id},startAction:()=>startNextMesoWorkout(meso)});}
 function startNextMesoWorkout(meso){const next=nextMesoSlot(meso);if(!next)return;const workout=workoutForMesoSlot(meso,next);startWorkout(workout.id,{mesocycleId:meso.id,week:next.week,slot:next.slot,plannedWorkoutId:next.plan.workout.id});}
+function mesoSlotReference(meso,week,slot){const plan=meso.schedule[slot];return plan?{week,slot,plan}:null;}
+function startScheduledMesoWorkout(meso,week,slot){const scheduled=mesoSlotReference(meso,week,slot);if(!scheduled||mesoSlotResolved(meso,week,slot))return;const workout=workoutForMesoSlot(meso,scheduled);startWorkout(workout.id,{mesocycleId:meso.id,week,slot,plannedWorkoutId:scheduled.plan.workout.id});}
+function previewScheduledMesoWorkout(meso,week,slot,trigger){const scheduled=mesoSlotReference(meso,week,slot);if(!scheduled)return;const workout=workoutForMesoSlot(meso,scheduled,false);const deload=isDeloadWeek(meso,week);openWorkoutPreview(workout,{trigger,originalWorkout:deload?scheduled.plan.workout:null,adjustmentReason:deload?"Deload week: sets and load are reduced and target RIR is increased.":"Today's active-mesocycle prescription.",context:{mesocycleId:meso.id,week,slot,plannedWorkoutId:scheduled.plan.workout.id},startAction:mesoSlotResolved(meso,week,slot)?null:()=>startScheduledMesoWorkout(meso,week,slot)});}
 function skipNextMeso(meso){const next=nextMesoSlot(meso);if(!next||!confirm(`Skip ${next.plan.workout.name}? It will remain recorded as missed.`))return;meso.progress.skipped.push({week:next.week,slot:next.slot,date:new Date().toISOString(),workoutName:next.plan.workout.name});afterMesoAdvance(meso,next.week);saveData();}
 function afterMesoAdvance(meso,oldWeek){const next=nextMesoSlot(meso);if(next&&next.week>oldWeek)meso.progress.needsWeekReview=true;}
 function repeatPreviousMesoWeek(meso){const current=currentMesoPosition(meso).week,previous=Math.max(1,current-1);meso.progress.completed=meso.progress.completed.filter(item=>item.week!==previous);meso.progress.skipped=meso.progress.skipped.filter(item=>item.week!==previous);meso.progress.needsWeekReview=false;saveData();}
@@ -263,12 +267,15 @@ function renderMesocycleToday(){
   if(!meso){btn.onclick=()=>{if(data.selectedWorkoutId)startWorkout(data.selectedWorkoutId);else document.querySelector('[data-view="builderView"]').click();};return;}
   const next=nextMesoSlot(meso),hero=document.querySelector("#homeView .hero-card");
   if(!next){hero.querySelector(".eyebrow").textContent="MESOCYCLE COMPLETE";document.querySelector("#todayWorkoutName").textContent=meso.name;document.querySelector("#todayWorkoutSummary").textContent="Open Programs to review and complete this mesocycle.";btn.textContent="Open Programs";btn.onclick=()=>document.querySelector('[data-view="programsView"]').click();previewBtn.classList.add("hidden");return;}
-  const today=new Date().getDay(),scheduledToday=next.plan.dayIndex===today;
   hero.querySelector(".eyebrow").textContent=`${meso.name.toUpperCase()} • WEEK ${next.week}`;
-  document.querySelector("#todayWorkoutName").textContent=scheduledToday?next.plan.workout.name:"Rest Day";
-  document.querySelector("#todayWorkoutSummary").textContent=scheduledToday?"Today's scheduled mesocycle workout.":`Next scheduled workout: ${next.plan.workout.name}. You can complete it early or choose another workout below.`;
-  btn.textContent=scheduledToday?"Start workout":"Complete next workout early";btn.onclick=()=>startNextMesoWorkout(meso);
-  previewBtn.classList.remove("hidden");previewBtn.onclick=event=>previewNextMesoWorkout(meso,event.currentTarget);
+  if(meso.progress.needsWeekReview){document.querySelector("#todayWorkoutName").textContent=`Week ${next.week} review`;document.querySelector("#todayWorkoutSummary").textContent="Approve the weekly review before starting this week's workouts.";btn.textContent="Open weekly review";btn.onclick=()=>document.querySelector('[data-view="programsView"]').click();previewBtn.classList.add("hidden");return;}
+  const today=new Date().getDay(),todaySlot=meso.schedule.findIndex(plan=>plan.dayIndex===today);
+  if(todaySlot<0){document.querySelector("#todayWorkoutName").textContent="Rest Day";document.querySelector("#todayWorkoutSummary").textContent=`No mesocycle workout is scheduled today. Next unresolved workout: ${next.plan.workout.name}.`;btn.textContent="Open active mesocycle";btn.onclick=()=>document.querySelector('[data-view="programsView"]').click();previewBtn.classList.add("hidden");return;}
+  const plan=meso.schedule[todaySlot],completed=meso.progress.completed.some(item=>item.week===next.week&&item.slot===todaySlot),skipped=meso.progress.skipped.some(item=>item.week===next.week&&item.slot===todaySlot),resolved=completed||skipped;
+  document.querySelector("#todayWorkoutName").textContent=plan.workout.name;
+  document.querySelector("#todayWorkoutSummary").textContent=resolved?(completed?"Today's active-mesocycle workout is complete.":"Today's active-mesocycle workout was skipped."):`${plan.workout.exercises.length} exercises • ${plan.workout.notes||"Today's active-mesocycle workout"}`;
+  btn.textContent=resolved?"Open active mesocycle":"Start today's workout";btn.onclick=resolved?()=>document.querySelector('[data-view="programsView"]').click():()=>startScheduledMesoWorkout(meso,next.week,todaySlot);
+  previewBtn.classList.remove("hidden");previewBtn.onclick=event=>previewScheduledMesoWorkout(meso,next.week,todaySlot,event.currentTarget);
 }
 
 document.querySelector("#newMesocycleButton").onclick=()=>openMesocycleBuilder();
