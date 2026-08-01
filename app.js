@@ -1,10 +1,13 @@
 
 const STORAGE_KEY = "fleemanFitnessDataV1";
-const APP_VERSION = "0.3.2-beta";
+const APP_VERSION = "0.5.4-beta";
+let previewReturnFocus = null;
+let previewScrollPosition = 0;
 const defaultData = {
   settings: { increment: 5, rest: 90 },
   selectedWorkoutId: "push-a",
   mesocycles: { drafts: [], active: null, completed: [] },
+  exerciseLibraryUser: { favorites: [], recent: [], customExercises: [] },
   workouts: [
     {
       id: "push-a",
@@ -44,6 +47,7 @@ const defaultData = {
 };
 
 let data = loadData();
+migrateExerciseReferences(data);
 let currentSession = null;
 let deferredPrompt = null;
 let pendingWorkoutId = null;
@@ -53,11 +57,14 @@ let sorenessAnswers = {};
 let pendingSorenessPlan = null;
 let waitingServiceWorker = null;
 let updateReloading = false;
+let exerciseLibraryContext = { type: "browse" };
+let exerciseLibraryFilters = { search: "", muscle: "", equipment: "", type: "", favorites: false, recent: false };
+let exercisePreviewReturnFocus = null;
 
-const muscleGroups = ["chest", "back", "shoulders", "arms", "quads", "hamstrings", "calves", "core"];
+const muscleGroups = ["chest", "back", "shoulders", "biceps", "triceps", "quads", "hamstrings", "glutes", "calves", "core", "traps", "forearms", "adductors", "abductors", "lower back"];
 const muscleLabels = {
-  chest: "Chest", back: "Back", shoulders: "Shoulders", arms: "Arms",
-  quads: "Quads", hamstrings: "Hamstrings", calves: "Calves", core: "Core"
+  chest: "Chest", back: "Back", shoulders: "Shoulders", biceps: "Biceps", triceps: "Triceps", arms: "Arms",
+  quads: "Quads", hamstrings: "Hamstrings", glutes: "Glutes", calves: "Calves", core: "Core", traps: "Traps", forearms: "Forearms", adductors: "Adductors", abductors: "Abductors", "lower back": "Lower Back"
 };
 
 function loadData() {
@@ -97,11 +104,23 @@ function isValidBackup(candidate) {
 }
 
 function mergeWithDefaults(saved) {
-  return {
+  const merged = {
     ...structuredClone(defaultData),
     ...saved,
-    settings: { ...defaultData.settings, ...saved.settings }
+    settings: { ...defaultData.settings, ...saved.settings },
+    exerciseLibraryUser: { ...structuredClone(defaultData.exerciseLibraryUser), ...(saved.exerciseLibraryUser || {}) }
   };
+  migrateExerciseReferences(merged);
+  return merged;
+}
+
+function normalizedExerciseName(name="") { return name.toLowerCase().replace(/[^a-z0-9]+/g,"").trim(); }
+function allExerciseDefinitions() { return [...COMMERCIAL_GYM_EXERCISES, ...(data.exerciseLibraryUser?.customExercises || [])]; }
+function migrateExerciseReferences(target=data) {
+  const byName = new Map(COMMERCIAL_GYM_EXERCISES.map(exercise => [normalizedExerciseName(exercise.name),exercise.id]));
+  const migrate = exercise => { if(!exercise.libraryExerciseId) exercise.libraryExerciseId=byName.get(normalizedExerciseName(exercise.name))||null; return exercise; };
+  target.workouts?.forEach(workout=>workout.exercises?.forEach(migrate));
+  [target.mesocycles?.active,...(target.mesocycles?.drafts||[]),...(target.mesocycles?.completed||[])].filter(Boolean).forEach(meso=>meso.schedule?.forEach(slot=>slot.workout?.exercises?.forEach(migrate)));
 }
 
 function saveData() {
@@ -186,6 +205,9 @@ function renderHome() {
     ? `${selected.exercises.length} exercises • ${selected.notes || "Ready to train"}`
     : "Select one of your saved workouts to begin.";
   document.querySelector("#startWorkoutButton").textContent = selected ? "Start workout" : "Choose workout";
+  const previewToday = document.querySelector("#previewTodayWorkoutButton");
+  previewToday.classList.toggle("hidden", !selected);
+  previewToday.onclick = selected ? event => openWorkoutPreview(selected, { trigger: event.currentTarget, selectable: true }) : null;
 
   const quick = document.querySelector("#quickWorkoutList");
   quick.innerHTML = "";
@@ -215,21 +237,25 @@ function calculatePRs() {
 }
 
 function workoutCard(workout, quick = false) {
+  const totals = workoutPreviewTotals(workout);
   const el = document.createElement("article");
   el.className = "workout-card";
   el.innerHTML = `
     <div class="workout-card-top">
       <div>
         <h3>${escapeHtml(workout.name)}</h3>
-        <p>${workout.exercises.length} exercises • ${escapeHtml(workout.notes || "Custom workout")}</p>
+        <p>${escapeHtml(workout.notes || "Custom workout")}</p>
+        <p class="small-note">${totals.exerciseCount} exercises • ${totals.totalSets} working sets • ${totals.estimatedMinutes} min • ${totals.primaryMuscles.map(sorenessLabel).join(", ") || "Mixed"}</p>
       </div>
       ${data.selectedWorkoutId === workout.id ? '<span class="eyebrow">SELECTED</span>' : ""}
     </div>
-    <div class="card-actions">
+    <div class="card-actions workout-card-actions horizontal-scroll-row">
+      <button class="secondary-button compact preview-card" aria-label="Preview ${escapeHtml(workout.name)}">Preview</button>
       <button class="primary-button compact start-card">Start</button>
       ${quick ? '<button class="secondary-button compact select-card">Select</button>' :
         '<button class="secondary-button compact edit-card">Edit</button><button class="danger-button compact delete-card">Delete</button>'}
     </div>`;
+  el.querySelector(".preview-card").onclick = event => openWorkoutPreview(workout, { trigger: event.currentTarget, selectable: quick, editable: !isPremadeWorkout(workout) });
   el.querySelector(".start-card").onclick = () => startWorkout(workout.id);
   const select = el.querySelector(".select-card");
   if (select) select.onclick = () => { data.selectedWorkoutId = workout.id; saveData(); };
@@ -245,6 +271,88 @@ function renderLibrary() {
   list.innerHTML = "";
   data.workouts.forEach(w => list.appendChild(workoutCard(w)));
 }
+
+function openExerciseLibrary(context={type:"browse"}) {
+  exerciseLibraryContext=context;
+  exerciseLibraryFilters={search:"",muscle:context.muscle||"",equipment:"",type:"",favorites:false,recent:false};
+  document.querySelector("#exerciseLibrarySearch").value="";
+  document.querySelector("#equipmentFilter").value="";
+  document.querySelector("#exerciseTypeFilter").value="";
+  renderExerciseLibrary();
+  document.querySelector("#exerciseLibraryDialog").showModal();
+  document.querySelector("#exerciseLibrarySearch").focus();
+}
+
+function closeExerciseLibrary(){document.querySelector("#exerciseLibraryDialog").close();exerciseLibraryContext={type:"browse"};}
+
+function exerciseSearchText(exercise){return [exercise.name,exercise.primaryMuscle,...(exercise.secondaryMuscles||[]),...(exercise.muscleTags||[]),...(exercise.equipment||[]),exercise.movementPattern,...(exercise.searchKeywords||[])].join(" ").toLowerCase();}
+
+function renderExerciseLibrary(){
+  const user=data.exerciseLibraryUser;
+  const all=allExerciseDefinitions();
+  const categories=Object.keys(EXERCISE_CATALOG);
+  const muscleRow=document.querySelector("#muscleFilterRow");
+  muscleRow.innerHTML=`<button class="filter-button" data-muscle="" aria-pressed="${!exerciseLibraryFilters.muscle}">All</button>${categories.map(category=>`<button class="filter-button" data-muscle="${escapeHtml(category)}" aria-pressed="${exerciseLibraryFilters.muscle===category}">${escapeHtml(category)}</button>`).join("")}`;
+  muscleRow.querySelectorAll(".filter-button").forEach(button=>button.onclick=()=>{exerciseLibraryFilters.muscle=button.dataset.muscle;renderExerciseLibrary();});
+  const equipment=[...new Set(all.flatMap(exercise=>exercise.equipment||[]))].sort();
+  const equipmentSelect=document.querySelector("#equipmentFilter");
+  if(equipmentSelect.options.length===1) equipment.forEach(item=>equipmentSelect.add(new Option(item,item)));
+  let results=all.filter(exercise=>{
+    const query=exerciseLibraryFilters.search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const text=exerciseSearchText(exercise);
+    return query.every(term=>text.includes(term))&&(!exerciseLibraryFilters.muscle||exercise.primaryMuscle===exerciseLibraryFilters.muscle)&&(!exerciseLibraryFilters.equipment||(exercise.equipment||[]).includes(exerciseLibraryFilters.equipment))&&(!exerciseLibraryFilters.type||exercise.exerciseType===exerciseLibraryFilters.type)&&(!exerciseLibraryFilters.favorites||user.favorites.includes(exercise.id))&&(!exerciseLibraryFilters.recent||user.recent.includes(exercise.id));
+  });
+  if(exerciseLibraryFilters.recent) results.sort((a,b)=>user.recent.indexOf(a.id)-user.recent.indexOf(b.id)); else results.sort((a,b)=>a.name.localeCompare(b.name));
+  document.querySelector("#favoritesFilterButton").setAttribute("aria-pressed",String(exerciseLibraryFilters.favorites));
+  document.querySelector("#recentFilterButton").setAttribute("aria-pressed",String(exerciseLibraryFilters.recent));
+  document.querySelector("#exerciseResultCount").textContent=`${results.length} exercises`;
+  const holder=document.querySelector("#exerciseLibraryResults");holder.innerHTML="";
+  results.forEach(exercise=>holder.appendChild(exerciseLibraryCard(exercise)));
+}
+
+function exerciseLibraryCard(exercise){
+  const card=document.createElement("article");card.className="library-exercise-card";
+  const favorite=data.exerciseLibraryUser.favorites.includes(exercise.id);
+  card.innerHTML=`<h3>${escapeHtml(exercise.name)}</h3><p>${escapeHtml(exercise.primaryMuscle)} • ${(exercise.equipment||[]).map(escapeHtml).join(", ")} • ${escapeHtml(exercise.exerciseType)}</p><p class="small-note">Default: ${exercise.defaults.sets} sets • ${exercise.defaults.minReps}–${exercise.defaults.maxReps} reps • RIR ${exercise.defaults.targetRIR}</p><div class="exercise-actions"><button class="secondary-button favorite-button" aria-label="${favorite?"Remove":"Add"} ${escapeHtml(exercise.name)} ${favorite?"from":"to"} favorites" aria-pressed="${favorite}">${favorite?"★":"☆"}</button><button class="secondary-button preview-exercise-button">Preview</button>${exerciseLibraryContext.type!=="browse"?'<button class="primary-button compact add-library-exercise">Add</button>':""}${exercise.sourceType==="custom"?'<button class="danger-button compact delete-custom-exercise">Delete</button>':""}</div>`;
+  card.querySelector(".favorite-button").onclick=()=>toggleExerciseFavorite(exercise.id);
+  card.querySelector(".preview-exercise-button").onclick=event=>openExercisePreview(exercise,event.currentTarget);
+  card.querySelector(".add-library-exercise")?.addEventListener("click",()=>addExerciseFromLibrary(exercise));
+  card.querySelector(".delete-custom-exercise")?.addEventListener("click",()=>deleteCustomExercise(exercise));
+  return card;
+}
+
+function toggleExerciseFavorite(id){const list=data.exerciseLibraryUser.favorites;data.exerciseLibraryUser.favorites=list.includes(id)?list.filter(item=>item!==id):[...list,id];saveData();renderExerciseLibrary();}
+function markExerciseUsed(id){if(!id)return;data.exerciseLibraryUser.recent=[id,...data.exerciseLibraryUser.recent.filter(item=>item!==id)].slice(0,25);}
+
+function addExerciseFromLibrary(definition){
+  const prescription=exerciseDefinitionToPrescription(definition);markExerciseUsed(definition.id);
+  if(exerciseLibraryContext.type==="workout") addExerciseEditor(prescription);
+  if(exerciseLibraryContext.type==="mesocycle"&&exerciseLibraryContext.slot){exerciseLibraryContext.slot.workout.exercises.push(prescription);renderMesoBuilder();}
+  localStorage.setItem(STORAGE_KEY,JSON.stringify(data));closeExercisePreview();closeExerciseLibrary();
+}
+
+function openExercisePreview(exercise,trigger){
+  exercisePreviewReturnFocus=trigger;const favorite=data.exerciseLibraryUser.favorites.includes(exercise.id);const similar=allExerciseDefinitions().filter(item=>item.id!==exercise.id&&item.substitutionFamily===exercise.substitutionFamily).slice(0,6);
+  document.querySelector("#exercisePreviewTitle").textContent=exercise.name;
+  document.querySelector("#exercisePreviewContent").innerHTML=`<p>${escapeHtml(exercise.description)}</p><div class="exercise-detail-list"><p><strong>Primary:</strong> ${escapeHtml(exercise.primaryMuscle)}</p><p><strong>Secondary:</strong> ${(exercise.secondaryMuscles||[]).map(escapeHtml).join(", ")||"None"}</p><p><strong>Equipment:</strong> ${(exercise.equipment||[]).map(escapeHtml).join(", ")}</p><p><strong>Classification:</strong> ${escapeHtml(exercise.exerciseType)} • ${escapeHtml(exercise.movementPattern)} • ${escapeHtml(exercise.laterality)}</p><p><strong>Suggested plan:</strong> ${exercise.defaults.sets} sets • ${exercise.defaults.minReps}–${exercise.defaults.maxReps} reps • RIR ${exercise.defaults.targetRIR} • ${exercise.defaults.restSeconds}s rest</p><p><strong>Increment:</strong> ${exercise.defaults.weightIncrement} lb • ${escapeHtml(exercise.defaults.weightEntryType)}</p><h3>Setup</h3><ul>${exercise.setup.map(item=>`<li>${escapeHtml(item)}</li>`).join("")}</ul><h3>Performance cues</h3><ul>${exercise.cues.map(item=>`<li>${escapeHtml(item)}</li>`).join("")}</ul>${exercise.caution?`<p class="recovery-warning">${escapeHtml(exercise.caution)}</p>`:""}<h3>Similar exercises</h3><p>${similar.map(item=>escapeHtml(item.name)).join(" • ")||"No similar exercises listed."}</p></div>`;
+  document.querySelector("#exercisePreviewActions").innerHTML=`${exerciseLibraryContext.type!=="browse"?'<button id="addExerciseFromPreviewButton" class="primary-button">Add Exercise</button>':""}<button id="favoriteExerciseFromPreviewButton" class="secondary-button">${favorite?"★ Favorited":"☆ Favorite"}</button><button id="backExercisePreviewButton" class="secondary-button">Back</button>`;
+  document.querySelector("#addExerciseFromPreviewButton")?.addEventListener("click",()=>addExerciseFromLibrary(exercise));
+  document.querySelector("#favoriteExerciseFromPreviewButton").onclick=()=>{toggleExerciseFavorite(exercise.id);closeExercisePreview();};
+  document.querySelector("#backExercisePreviewButton").onclick=closeExercisePreview;
+  document.querySelector("#exercisePreviewDialog").showModal();document.querySelector("#closeExercisePreviewButton").focus();
+}
+
+function closeExercisePreview(){const dialog=document.querySelector("#exercisePreviewDialog");if(dialog.open)dialog.close();exercisePreviewReturnFocus?.focus();}
+
+function createCustomExercise(){
+  const name=prompt("Custom exercise name");if(!name?.trim())return;
+  const primaryMuscle=prompt(`Primary muscle (${Object.keys(EXERCISE_CATALOG).join(", ")})`,"Chest")||"Chest";
+  const equipment=prompt("Equipment","Commercial Gym Equipment")||"Commercial Gym Equipment";
+  const definition=buildExerciseDefinition(name.trim(),primaryMuscle.trim());definition.id=`custom-${crypto.randomUUID()}`;definition.description=prompt("Short description",definition.description)||definition.description;definition.equipment=[equipment.trim()];definition.sourceType="custom";definition.searchKeywords=[name.toLowerCase(),primaryMuscle.toLowerCase(),equipment.toLowerCase()];
+  data.exerciseLibraryUser.customExercises.push(definition);saveData();renderExerciseLibrary();
+}
+
+function deleteCustomExercise(exercise){if(!confirm(`Delete custom exercise ${exercise.name}? Existing workout prescriptions will remain.`))return;data.exerciseLibraryUser.customExercises=data.exerciseLibraryUser.customExercises.filter(item=>item.id!==exercise.id);data.exerciseLibraryUser.favorites=data.exerciseLibraryUser.favorites.filter(id=>id!==exercise.id);saveData();renderExerciseLibrary();}
 
 function renderHistory() {
   const list = document.querySelector("#historyList");
@@ -280,15 +388,26 @@ function openWorkoutEditor(workout = null) {
   document.querySelector("#workoutDialog").showModal();
 }
 
+function cancelWorkoutEditor() {
+  if (!confirm("Cancel workout editing? Any unsaved changes will be lost.")) return;
+  document.querySelector("#workoutDialog").close();
+}
+
 function addExerciseEditor(exercise = {}) {
   const node = document.querySelector("#exerciseEditorTemplate").content.cloneNode(true);
   const card = node.querySelector(".exercise-editor-card");
   card.dataset.exerciseId = exercise.id || crypto.randomUUID();
+  card.dataset.libraryExerciseId = exercise.libraryExerciseId || "";
+  card.dataset.exerciseMetadata = JSON.stringify({description:exercise.description||"",muscle:exercise.muscle||exercise.primaryMuscle||"",primaryMuscle:exercise.primaryMuscle||exercise.muscle||"",secondaryMuscles:exercise.secondaryMuscles||[],muscleTags:exercise.muscleTags||[],equipment:exercise.equipment||[],exerciseType:exercise.exerciseType||"",movementPattern:exercise.movementPattern||"",laterality:exercise.laterality||"",substitutionFamily:exercise.substitutionFamily||"",weightEntryType:exercise.weightEntryType||"Total Weight",sourceType:exercise.sourceType||"custom",setup:exercise.setup||[],cues:exercise.cues||[]});
   card.querySelector(".exercise-name").value = exercise.name || "";
   card.querySelector(".exercise-sets").value = exercise.sets ?? 3;
   card.querySelector(".exercise-min-reps").value = exercise.minReps ?? 8;
   card.querySelector(".exercise-max-reps").value = exercise.maxReps ?? 12;
   card.querySelector(".exercise-weight").value = exercise.startWeight ?? 0;
+  card.querySelector(".exercise-target-rir").value = exercise.targetRir ?? 3;
+  card.querySelector(".exercise-rest").value = exercise.rest ?? data.settings.rest;
+  card.querySelector(".exercise-increment").value = exercise.increment ?? data.settings.increment;
+  card.querySelector(".exercise-weight-label").textContent = exercise.weightEntryType === "Per Dumbbell" ? "Weight per dumbbell" : exercise.weightEntryType === "Assisted Bodyweight" ? "Assistance weight" : "Start weight";
   card.querySelector(".remove-exercise").onclick = () => card.remove();
   document.querySelector("#exerciseEditor").appendChild(node);
 }
@@ -304,11 +423,111 @@ function workoutMuscles(workout) {
   return [...new Set(workout.exercises.flatMap(exerciseMuscles))];
 }
 
+function isPremadeWorkout(workout) {
+  return ["push-a", "pull-a", "legs-a"].includes(workout?.id);
+}
+
+function workoutPreviewTotals(workout) {
+  const exercises = workout?.exercises || [];
+  const totalSets = exercises.reduce((sum, exercise) => sum + Number(exercise.sets || 0), 0);
+  let seconds = 0;
+  exercises.forEach((exercise, index) => {
+    const sets = Number(exercise.sets || 0);
+    const rest = Number(exercise.rest ?? data.settings.rest ?? 90);
+    seconds += sets * 40 + Math.max(0, sets - 1) * rest;
+    if (index < exercises.length - 1) seconds += 90;
+  });
+  const estimatedMinutes = Math.max(5, Math.round(seconds / 60 / 5) * 5);
+  const primaryMuscles = [...new Set(exercises.map(exercise => exerciseMuscles(exercise)[0]).filter(Boolean))];
+  const secondaryMuscles = [...new Set(exercises.flatMap(exercise => exerciseMuscles(exercise).slice(1)).filter(muscle => !primaryMuscles.includes(muscle)))];
+  return { exerciseCount: exercises.length, totalSets, estimatedMinutes, primaryMuscles, secondaryMuscles };
+}
+
+function previewExerciseMarkup(exercise, index, originalExercise = null, adjustmentReason = "") {
+  const muscles = exerciseMuscles(exercise);
+  const rec = recommendationFor(exercise);
+  const rest = Number(exercise.rest ?? data.settings.rest ?? 90);
+  const weight = Number(rec.weight ?? exercise.startWeight ?? 0);
+  const changed = originalExercise && ["sets", "startWeight", "targetRir", "minReps", "maxReps"].some(field => Number(originalExercise[field] ?? 0) !== Number(exercise[field] ?? 0));
+  const originalWeight = Number(originalExercise?.startWeight ?? 0);
+  return `<article class="preview-exercise">
+    <h3>${index + 1}. ${escapeHtml(exercise.name)}</h3>
+    <p><strong>Muscles:</strong> ${muscles.map(sorenessLabel).join(", ") || escapeHtml(exercise.muscle || "Other")}</p>
+    <p><strong>Plan:</strong> ${Number(exercise.sets || 0)} working sets • ${Number(exercise.minReps || 0)}–${Number(exercise.maxReps || 0)} reps • Target RIR ${Number(exercise.targetRir ?? 3)}</p>
+    <p><strong>Rest:</strong> ${rest} seconds${weight ? ` • <strong>Recommended weight:</strong> ${weight} lb` : ""}</p>
+    ${rec.note ? `<p><strong>Progression:</strong> ${escapeHtml(rec.note)}</p>` : ""}
+    ${Number(rec.pain?.rating) >= 3 ? `<div class="preview-adjustment"><strong>Joint-pain recommendation:</strong> ${escapeHtml(rec.pain.note || `Pain rating ${rec.pain.rating}/5`)}${rec.pain.joints?.length ? `<br>Affected: ${rec.pain.joints.map(escapeHtml).join(", ")}` : ""}</div>` : ""}
+    ${exercise.notes ? `<p><strong>Notes:</strong> ${escapeHtml(exercise.notes)}</p>` : ""}
+    ${changed ? `<div class="preview-adjustment"><strong>Original:</strong> ${Number(originalExercise.sets || 0)} sets at ${originalWeight || "—"} lb, RIR ${Number(originalExercise.targetRir ?? 3)}<br><strong>Adjusted:</strong> ${Number(exercise.sets || 0)} sets at ${weight || "—"} lb, RIR ${Number(exercise.targetRir ?? 3)}${adjustmentReason ? `<br><span>${escapeHtml(adjustmentReason)}</span>` : ""}</div>` : ""}
+  </article>`;
+}
+
+function closeWorkoutPreview() {
+  const dialog = document.querySelector("#workoutPreviewDialog");
+  if (dialog.open) dialog.close();
+  window.scrollTo({ top: previewScrollPosition, behavior: "auto" });
+  previewReturnFocus?.focus();
+}
+
+function savePremadeWorkoutCopy(workout) {
+  const copy = structuredClone(workout);
+  copy.id = crypto.randomUUID();
+  copy.name = `${workout.name} Copy`;
+  copy.exercises = copy.exercises.map(exercise => ({ ...exercise, id: crypto.randomUUID() }));
+  data.workouts.push(copy);
+  saveData();
+  alert(`${copy.name} was saved to My Workouts.`);
+}
+
+function openWorkoutPreview(workout, options = {}) {
+  if (!workout) return;
+  previewReturnFocus = options.trigger || document.activeElement;
+  previewScrollPosition = window.scrollY;
+  const totals = workoutPreviewTotals(workout);
+  const original = options.originalWorkout;
+  document.querySelector("#workoutPreviewTitle").textContent = workout.name;
+  document.querySelector("#workoutPreviewContent").innerHTML = `
+    <p>${escapeHtml(workout.notes || "Review the complete planned workout before starting.")}</p>
+    ${options.adjustmentReason ? `<p class="small-note"><strong>Current adjustment:</strong> ${escapeHtml(options.adjustmentReason)}</p>` : ""}
+    <div class="preview-summary">
+      <div class="summary-stat"><strong>${totals.estimatedMinutes} min</strong><span>Estimated time</span></div>
+      <div class="summary-stat"><strong>${totals.exerciseCount}</strong><span>Exercises</span></div>
+      <div class="summary-stat"><strong>${totals.totalSets}</strong><span>Working sets</span></div>
+      <div class="summary-stat"><strong>${totals.primaryMuscles.map(sorenessLabel).join(", ") || "Mixed"}</strong><span>Primary muscles</span></div>
+    </div>
+    ${totals.secondaryMuscles.length ? `<p><strong>Secondary muscles:</strong> ${totals.secondaryMuscles.map(sorenessLabel).join(", ")}</p>` : ""}
+    <p class="small-note">Estimated time uses 40 seconds per working set, the planned rest between sets, and 90 seconds between exercises, rounded to the nearest 5 minutes.</p>
+    <h3>Exercise order</h3>
+    <div>${workout.exercises.map((exercise, index) => previewExerciseMarkup(exercise, index, original?.exercises?.[index], options.adjustmentReason)).join("")}</div>`;
+  const actions = document.querySelector("#workoutPreviewActions");
+  actions.innerHTML = `${options.startAction === null ? "" : '<button id="startFromPreviewButton" class="primary-button">Start Workout</button>'}
+    ${options.selectable ? '<button id="selectFromPreviewButton" class="secondary-button">Select This Workout</button>' : ""}
+    ${isPremadeWorkout(workout) && !options.originalWorkout ? '<button id="savePreviewCopyButton" class="secondary-button">Save as My Workout</button>' : ""}
+    ${options.editable ? '<button id="editFromPreviewButton" class="secondary-button">Edit Workout</button>' : ""}
+    <button id="backFromPreviewButton" class="secondary-button">Back</button>`;
+  document.querySelector("#startFromPreviewButton")?.addEventListener("click", () => {
+    closeWorkoutPreview();
+    if (options.startAction) options.startAction(); else startWorkout(workout.id, options.context || null);
+  });
+  document.querySelector("#selectFromPreviewButton")?.addEventListener("click", () => {
+    if (options.selectAction) options.selectAction();
+    else if (data.workouts.some(item => item.id === workout.id)) { data.selectedWorkoutId = workout.id; saveData(); }
+    closeWorkoutPreview();
+  });
+  document.querySelector("#savePreviewCopyButton")?.addEventListener("click", () => savePremadeWorkoutCopy(workout));
+  document.querySelector("#editFromPreviewButton")?.addEventListener("click", () => { closeWorkoutPreview(); openWorkoutEditor(workout); });
+  document.querySelector("#backFromPreviewButton").addEventListener("click", closeWorkoutPreview);
+  const dialog = document.querySelector("#workoutPreviewDialog");
+  dialog.showModal();
+  document.querySelector("#closeWorkoutPreviewButton").focus();
+}
+
 function exerciseMuscles(exercise) {
+  if (exercise.primaryMuscle) return [...new Set([exercise.primaryMuscle,...(exercise.secondaryMuscles||[])].map(muscle=>String(muscle).toLowerCase()))];
   const text = `${exercise.name} ${exercise.muscle || ""}`.toLowerCase();
   const muscles = [];
-  if (/chest|bench|pec|fly|push[- ]?up/.test(text)) muscles.push("chest");
-  if (/shoulder|delt|overhead|bench|incline press/.test(text)) muscles.push("shoulders");
+  if (/chest|bench|pec|fly|push[- ]?up|incline.*press/.test(text)) muscles.push("chest");
+  if (/shoulder|delt|overhead|bench|incline.*press|seated.*press/.test(text)) muscles.push("shoulders");
   if (/tricep|extension|pushdown|dip|bench|press/.test(text)) muscles.push("triceps");
   if (/back|row|pulldown|pull[- ]?up|lat|deadlift/.test(text)) muscles.push("back");
   if (/bicep|curl|pulldown|row|pull[- ]?up/.test(text)) muscles.push("biceps");
@@ -359,12 +578,14 @@ function updateRecoveryRecommendation() {
   const panel = document.querySelector("#recoveryRecommendation");
   const accept = document.querySelector("#startRecommendedButton");
   const skip = document.querySelector("#skipSoreMusclesButton");
+  const previewAdjusted = document.querySelector("#previewAdjustedWorkoutButton");
   if (unanswered.length) {
     panel.innerHTML = `<h3>Complete the check-in</h3><p>Rate ${unanswered.map(sorenessLabel).join(", ")} to review today's prescription.</p>`;
-    accept.disabled = true; skip.classList.add("hidden"); return;
+    accept.disabled = true; skip.classList.add("hidden"); previewAdjusted.classList.add("hidden"); return;
   }
   accept.disabled = false;
   skip.classList.toggle("hidden", !pendingSorenessPlan.hasHigh);
+  previewAdjusted.classList.toggle("hidden", !pendingSorenessPlan.hasAdjustment);
   const notes = [];
   Object.entries(sorenessAnswers).forEach(([muscle, rating]) => {
     if (rating === 1) notes.push(`<p><strong>${sorenessLabel(muscle)}:</strong> Mild soreness detected. Continue as planned and reassess during warm-up sets.</p>`);
@@ -372,6 +593,28 @@ function updateRecoveryRecommendation() {
   });
   pendingSorenessPlan.changes.filter(change => change.severity >= 2).forEach(change => notes.push(`<div class="prescription-change"><strong>${escapeHtml(change.exerciseName)}</strong><p>Adjusted because of ${sorenessLabel(change.causedBy)}: ${change.original.sets} sets at ${change.original.weight} lb, RIR ${change.original.targetRir} → ${change.adjusted.sets || "skip"} sets at ${change.adjusted.weight} lb, RIR ${change.adjusted.targetRir}</p></div>`));
   panel.innerHTML = `<h3>${pendingSorenessPlan.hasAdjustment ? "Review adjusted workout" : "Continue as planned"}</h3>${notes.join("") || "<p>No soreness adjustments are recommended.</p>"}`;
+}
+
+function previewAdjustedWorkout(trigger) {
+  if (!pendingWorkoutId || !pendingSorenessPlan) return;
+  const original = data.workouts.find(workout => workout.id === pendingWorkoutId);
+  const adjusted = structuredClone(original);
+  adjusted.exercises = adjusted.exercises.map(exercise => {
+    const change = pendingSorenessPlan.changes.find(item => item.exerciseId === exercise.id);
+    return change ? { ...exercise, sets: change.adjusted.sets, startWeight: change.adjusted.weight, targetRir: change.adjusted.targetRir } : exercise;
+  });
+  const workoutId = pendingWorkoutId, workoutContext = pendingWorkoutContext;
+  openWorkoutPreview(adjusted, {
+    trigger,
+    originalWorkout: original,
+    adjustmentReason: "Adjusted from today's completed muscle-soreness check-in.",
+    startAction: () => {
+      const soreness = { ratings: structuredClone(sorenessAnswers), changes: structuredClone(pendingSorenessPlan.changes), decision: "accepted", date: new Date().toISOString(), week: workoutContext?.week, workoutName: original.name };
+      document.querySelector("#recoveryDialog").close();
+      pendingWorkoutId = null; pendingWorkoutContext = null; pendingSorenessPlan = null;
+      beginWorkout(workoutId, soreness, workoutContext, "adjusted");
+    }
+  });
 }
 
 function startWorkout(id, context = null) {
@@ -422,6 +665,7 @@ function beginWorkout(id, sorenessRecord, context = pendingWorkoutContext, decis
       if (pain.rating >= 4) plannedSets = 0;
       return {
         exerciseId: e.id,
+        libraryExerciseId: e.libraryExerciseId || null,
         name: e.name,
         weight: prescription?.weight ?? rec.weight,
         recommendation: rec.note,
@@ -525,6 +769,7 @@ function finishWorkout() {
   const completedCount = currentSession.exercises.reduce((s, e) => s + e.sets.filter(x => x.done).length, 0);
   if (!completedCount && !confirm("No sets are marked complete. Save anyway?")) return;
   const finishedSession = structuredClone(currentSession);
+  finishedSession.exercises.forEach(exercise => markExerciseUsed(exercise.libraryExerciseId));
   data.history.unshift(finishedSession);
   if (typeof onMesocycleWorkoutFinished === "function") onMesocycleWorkoutFinished(finishedSession);
   currentSession = null;
@@ -550,7 +795,25 @@ document.querySelector("#startWorkoutButton").onclick = () => {
   else document.querySelector('[data-view="builderView"]').click();
 };
 document.querySelector("#newWorkoutButton").onclick = () => openWorkoutEditor();
+document.querySelector("#closeWorkoutEditorButton").onclick = cancelWorkoutEditor;
+document.querySelector("#workoutDialog").addEventListener("cancel", event => { event.preventDefault(); cancelWorkoutEditor(); });
 document.querySelector("#addExerciseButton").onclick = () => addExerciseEditor();
+document.querySelector("#openExerciseLibraryButton").onclick = () => openExerciseLibrary({type:"browse"});
+document.querySelector("#browseExercisesForWorkoutButton").onclick = () => openExerciseLibrary({type:"workout"});
+document.querySelector("#closeExerciseLibraryButton").onclick = closeExerciseLibrary;
+document.querySelector("#exerciseLibraryDialog").addEventListener("cancel",event=>{event.preventDefault();closeExerciseLibrary();});
+document.querySelector("#closeExercisePreviewButton").onclick = closeExercisePreview;
+document.querySelector("#exercisePreviewDialog").addEventListener("cancel",event=>{event.preventDefault();closeExercisePreview();});
+document.querySelector("#exerciseLibrarySearch").oninput = event => {exerciseLibraryFilters.search=event.target.value;renderExerciseLibrary();};
+document.querySelector("#equipmentFilter").onchange = event => {exerciseLibraryFilters.equipment=event.target.value;renderExerciseLibrary();};
+document.querySelector("#exerciseTypeFilter").onchange = event => {exerciseLibraryFilters.type=event.target.value;renderExerciseLibrary();};
+document.querySelector("#favoritesFilterButton").onclick = () => {exerciseLibraryFilters.favorites=!exerciseLibraryFilters.favorites;renderExerciseLibrary();};
+document.querySelector("#recentFilterButton").onclick = () => {exerciseLibraryFilters.recent=!exerciseLibraryFilters.recent;renderExerciseLibrary();};
+document.querySelector("#clearExerciseFiltersButton").onclick = () => {exerciseLibraryFilters={search:"",muscle:"",equipment:"",type:"",favorites:false,recent:false};document.querySelector("#exerciseLibrarySearch").value="";document.querySelector("#equipmentFilter").value="";document.querySelector("#exerciseTypeFilter").value="";renderExerciseLibrary();};
+document.querySelector("#createCustomExerciseButton").onclick = createCustomExercise;
+document.querySelector("#closeWorkoutPreviewButton").onclick = closeWorkoutPreview;
+document.querySelector("#workoutPreviewDialog").addEventListener("cancel", event => { event.preventDefault(); closeWorkoutPreview(); });
+document.querySelector("#previewAdjustedWorkoutButton").onclick = event => previewAdjustedWorkout(event.currentTarget);
 document.querySelector("#closeRecoveryButton").onclick = () => {
   pendingWorkoutId = null;
   recommendedWorkoutId = null;
@@ -601,12 +864,17 @@ document.querySelector("#workoutForm").onsubmit = event => {
   event.preventDefault();
   const cards = [...document.querySelectorAll("#exerciseEditor .exercise-editor-card")];
   const exercises = cards.map(card => ({
+    ...JSON.parse(card.dataset.exerciseMetadata || "{}"),
     id: card.dataset.exerciseId,
+    libraryExerciseId: card.dataset.libraryExerciseId || null,
     name: card.querySelector(".exercise-name").value.trim(),
     sets: Number(card.querySelector(".exercise-sets").value),
     minReps: Number(card.querySelector(".exercise-min-reps").value),
     maxReps: Number(card.querySelector(".exercise-max-reps").value),
-    startWeight: Number(card.querySelector(".exercise-weight").value)
+    startWeight: Number(card.querySelector(".exercise-weight").value),
+    targetRir: Number(card.querySelector(".exercise-target-rir").value),
+    rest: Number(card.querySelector(".exercise-rest").value),
+    increment: Number(card.querySelector(".exercise-increment").value)
   })).filter(e => e.name);
 
   if (!exercises.length) return alert("Add at least one exercise.");

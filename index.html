@@ -40,7 +40,10 @@
         <p class="eyebrow">READY WHEN YOU ARE</p>
         <h2 id="todayWorkoutName">Choose a workout</h2>
         <p id="todayWorkoutSummary">Select one of your saved workouts to begin.</p>
-        <button id="startWorkoutButton" class="primary-button">Choose workout</button>
+        <div class="hero-actions">
+          <button id="previewTodayWorkoutButton" class="secondary-button hidden">Preview</button>
+          <button id="startWorkoutButton" class="primary-button">Choose workout</button>
+        </div>
       </div>
 
       <div class="section-heading">
@@ -72,9 +75,22 @@
           <p class="eyebrow">PROGRAM LIBRARY</p>
           <h2>Your workouts</h2>
         </div>
-        <button id="newWorkoutButton" class="primary-button compact">New</button>
+        <div class="exercise-actions"><button id="openExerciseLibraryButton" class="secondary-button compact">Exercise Library</button><button id="newWorkoutButton" class="primary-button compact">New</button></div>
       </div>
       <div id="workoutLibrary" class="card-list"></div>
+      <dialog id="exerciseLibraryDialog" aria-labelledby="exerciseLibraryTitle"><div id="exerciseLibraryPanel" class="dialog-card exercise-library-panel">
+        <div class="section-heading"><div><p class="eyebrow">COMMERCIAL GYM</p><h2 id="exerciseLibraryTitle">Exercise Library</h2></div><button id="closeExerciseLibraryButton" class="secondary-button compact">Close</button></div>
+        <label for="exerciseLibrarySearch">Search exercises</label>
+        <input id="exerciseLibrarySearch" type="search" placeholder="Search name, muscle, equipment, or movement" autocomplete="off">
+        <div id="muscleFilterRow" class="filter-scroll horizontal-scroll-row" aria-label="Muscle filters"></div>
+        <div class="library-filter-grid">
+          <label>Equipment<select id="equipmentFilter"><option value="">All equipment</option></select></label>
+          <label>Type<select id="exerciseTypeFilter"><option value="">Compound and isolation</option><option>Compound</option><option>Isolation</option></select></label>
+        </div>
+        <div class="exercise-actions"><button id="favoritesFilterButton" class="secondary-button" aria-pressed="false">☆ Favorites</button><button id="recentFilterButton" class="secondary-button" aria-pressed="false">Recently used</button><button id="clearExerciseFiltersButton" class="secondary-button">Clear filters</button><button id="createCustomExerciseButton" class="secondary-button">Create Custom Exercise</button></div>
+        <p id="exerciseResultCount" class="small-note" aria-live="polite"></p>
+        <div id="exerciseLibraryResults" class="exercise-library-results"></div>
+      </div></dialog>
     </section>
 
     <section id="historyView" class="view">
@@ -122,7 +138,7 @@
     <form method="dialog" id="workoutForm" class="dialog-card">
       <div class="dialog-header">
         <h2 id="workoutDialogTitle">New workout</h2>
-        <button value="cancel" class="icon-button" aria-label="Close">×</button>
+        <button type="button" id="closeWorkoutEditorButton" class="icon-button" aria-label="Cancel workout editing">×</button>
       </div>
       <input type="hidden" id="editingWorkoutId" />
       <label>
@@ -135,7 +151,7 @@
       </label>
       <div class="section-heading">
         <h3>Exercises</h3>
-        <button type="button" id="addExerciseButton" class="secondary-button compact">Add exercise</button>
+        <div class="exercise-actions"><button type="button" id="browseExercisesForWorkoutButton" class="secondary-button compact">Browse Library</button><button type="button" id="addExerciseButton" class="secondary-button compact">Create Custom</button></div>
       </div>
       <div id="exerciseEditor"></div>
       <button type="submit" class="primary-button">Save workout</button>
@@ -155,6 +171,7 @@
       <div id="sorenessGrid" class="soreness-grid"></div>
       <div id="recoveryRecommendation" class="recommendation-panel" aria-live="polite"></div>
       <div class="recovery-actions">
+        <button id="previewAdjustedWorkoutButton" class="secondary-button hidden">Preview adjusted workout</button>
         <button id="startRecommendedButton" class="primary-button">Accept adjusted workout</button>
         <button id="skipSoreMusclesButton" class="secondary-button hidden">Skip highly sore muscles</button>
         <button id="startOriginalButton" class="secondary-button">Continue as originally planned</button>
@@ -171,6 +188,28 @@
       <div id="mesocycleStepIndicator" class="step-indicator"></div>
       <div id="mesocycleBuilderBody"></div>
       <div id="mesocycleBuilderActions" class="builder-actions"></div>
+    </div>
+  </dialog>
+
+  <dialog id="workoutPreviewDialog" aria-labelledby="workoutPreviewTitle">
+    <div class="dialog-card preview-dialog-card">
+      <div class="dialog-header sticky">
+        <div>
+          <p class="eyebrow">WORKOUT PREVIEW</p>
+          <h2 id="workoutPreviewTitle">Workout preview</h2>
+        </div>
+        <button id="closeWorkoutPreviewButton" class="icon-button" aria-label="Close workout preview">×</button>
+      </div>
+      <div id="workoutPreviewContent" class="workout-preview-content"></div>
+      <div id="workoutPreviewActions" class="preview-actions"></div>
+    </div>
+  </dialog>
+
+  <dialog id="exercisePreviewDialog" aria-labelledby="exercisePreviewTitle">
+    <div class="dialog-card preview-dialog-card">
+      <div class="dialog-header sticky"><div><p class="eyebrow">EXERCISE PREVIEW</p><h2 id="exercisePreviewTitle"></h2></div><button id="closeExercisePreviewButton" class="icon-button" aria-label="Close exercise preview">×</button></div>
+      <div id="exercisePreviewContent" class="workout-preview-content"></div>
+      <div id="exercisePreviewActions" class="preview-actions"></div>
     </div>
   </dialog>
 
@@ -198,11 +237,15 @@
         <label>Sets<input class="exercise-sets" type="number" min="1" max="10" value="3" /></label>
         <label>Min reps<input class="exercise-min-reps" type="number" min="1" max="50" value="8" /></label>
         <label>Max reps<input class="exercise-max-reps" type="number" min="1" max="50" value="12" /></label>
-        <label>Start weight<input class="exercise-weight" type="number" min="0" step="2.5" value="0" /></label>
+        <label><span class="exercise-weight-label">Start weight</span><input class="exercise-weight" type="number" min="0" step="2.5" value="0" /></label>
+        <label>Target RIR<input class="exercise-target-rir" type="number" min="0" max="10" value="3" /></label>
+        <label>Rest seconds<input class="exercise-rest" type="number" min="0" value="90" /></label>
+        <label>Weight increase<input class="exercise-increment" type="number" min="0" step="2.5" value="5" /></label>
       </div>
     </div>
   </template>
 
+  <script src="exercise-library.js"></script>
   <script src="app.js"></script>
   <script src="mesocycles.js"></script>
 </body>
