@@ -27,6 +27,7 @@
       <button class="tab" data-view="programsView">Programs</button>
       <button class="tab" data-view="builderView">Workouts</button>
       <button class="tab" data-view="historyView">History</button>
+      <button class="tab" data-view="profileView">Profile</button>
       <button class="tab" data-view="settingsView">Settings</button>
     </nav>
 
@@ -101,6 +102,28 @@
         </div>
       </div>
       <div id="historyList" class="card-list"></div>
+    </section>
+
+    <section id="profileView" class="view">
+      <div class="section-heading"><div><p class="eyebrow">LOCAL PROFILE</p><h2>Profile</h2></div><button id="editProfileButton" class="primary-button compact">Edit Profile</button></div>
+      <div id="profileSummary" class="card-list"></div>
+      <div id="activeMesoProfileNotice" class="panel recovery-warning hidden">
+        <strong>Your active mesocycle will not be changed automatically.</strong>
+        <p>Profile edits affect future recommendations unless you choose to review or recalculate missing weights.</p>
+        <div class="exercise-actions">
+          <button id="keepActiveWeightsButton" class="secondary-button">Keep current weights</button>
+          <button id="recalculateActiveMissingButton" class="secondary-button">Recalculate only exercises without history</button>
+          <button id="reviewActiveWeightChangesButton" class="secondary-button">Review suggested changes</button>
+        </div>
+        <div id="activeWeightChangeReview" class="small-note"></div>
+      </div>
+      <div class="panel profile-actions">
+        <button id="editBaselinesButton" class="secondary-button">Edit Strength Baselines</button>
+        <button id="restartProfileButton" class="secondary-button">Restart Profile Setup</button>
+        <button id="recalculateWeightsButton" class="secondary-button">Recalculate Missing Starting Weights</button>
+        <button id="exportProfileButton" class="secondary-button">Export Profile Data</button>
+        <p class="small-note">Your profile and workout data are stored on this device unless you export a backup.</p>
+      </div>
     </section>
 
     <section id="settingsView" class="view">
@@ -221,6 +244,28 @@
     </div>
   </dialog>
 
+  <dialog id="activeProgramDialog" aria-labelledby="activeProgramTitle">
+    <div class="dialog-card preview-dialog-card">
+      <div class="dialog-header sticky"><div><p class="eyebrow">ACTIVE MESOCYCLE</p><h2 id="activeProgramTitle">You already have an active mesocycle.</h2></div><button id="closeActiveProgramButton" class="icon-button" aria-label="Close active mesocycle options">×</button></div>
+      <p>Your current plan will not be ended or overwritten automatically.</p>
+      <div class="preview-actions active-program-actions">
+        <button id="previewPendingProgramButton" class="secondary-button">Preview New Program</button>
+        <button id="savePendingProgramDraftButton" class="primary-button">Save New Program as Draft</button>
+        <button id="returnActiveMesocycleButton" class="secondary-button">Return to Active Mesocycle</button>
+        <button id="endActiveForProgramButton" class="danger-button">End Current Mesocycle</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="onboardingDialog" aria-labelledby="onboardingTitle">
+    <div class="dialog-card onboarding-card">
+      <div class="dialog-header sticky"><div><p class="eyebrow">PROFILE SETUP</p><h2 id="onboardingTitle">Welcome to Fleeman Fitness</h2></div><button id="dismissOnboardingButton" class="icon-button" aria-label="Close profile setup">×</button></div>
+      <div id="onboardingProgress" class="step-indicator" role="progressbar" aria-label="Profile setup progress" aria-valuemin="1" aria-valuemax="4"></div>
+      <div id="onboardingBody"></div>
+      <div class="builder-actions onboarding-actions"><button id="onboardingBackButton" class="secondary-button">Back</button><button id="onboardingSkipButton" class="secondary-button">Remind me later</button><button id="onboardingContinueButton" class="primary-button">Continue</button></div>
+    </div>
+  </dialog>
+
   <dialog id="sessionDialog">
     <div class="dialog-card session-dialog">
       <div class="dialog-header sticky">
@@ -255,6 +300,7 @@
 
   <script src="exercise-library.js"></script>
   <script src="program-templates.js"></script>
+  <script src="starting-weight-rules.js"></script>
   <script src="app.js"></script>
   <script src="mesocycles.js"></script>
 </body>

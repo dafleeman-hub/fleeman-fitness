@@ -29,7 +29,7 @@ function exerciseSlug(name) {
 }
 
 function exerciseEquipment(name) {
-  const rules = [[/dumbbell/i,["Dumbbells"]],[/barbell|good morning|pendlay/i,["Barbell"]],[/smith/i,["Smith Machine"]],[/cable|pushdown|face pull|pallof/i,["Cable Station"]],[/assisted/i,["Assisted Bodyweight Machine"]],[/pull-up|chin-up|hanging|dip$/i,["Bodyweight Station"]],[/plate-loaded/i,["Plate-Loaded Machine"]],[/machine|pec deck|hack squat|pendulum|leg press|leg extension|leg curl|glute drive|captain/i,["Machine"]],[/bench press|squat|romanian deadlift|stiff-leg/i,["Barbell"]]];
+  const rules = [[/dumbbell/i,["Dumbbells"]],[/barbell|good morning|pendlay/i,["Barbell"]],[/smith/i,["Smith Machine"]],[/cable|pushdown|face pull|pallof/i,["Cable Station"]],[/assisted/i,["Assisted Bodyweight Machine"]],[/pull-up|chin-up|hanging|dip$/i,["Bodyweight Station"]],[/plate-loaded/i,["Plate-Loaded Machine"]],[/selectorized|machine|pec deck|hack squat|pendulum|leg press|leg extension|leg curl|glute drive|captain/i,["Machine"]],[/bench press|squat|romanian deadlift|stiff-leg/i,["Barbell"]]];
   return (rules.find(([pattern]) => pattern.test(name)) || [null,["Commercial Gym Equipment"]])[1];
 }
 
@@ -59,7 +59,7 @@ function buildExerciseDefinition(name, primaryMuscle) {
     ? {sets:3,minReps:10,maxReps:/calf|core|crunch|raise|fly/i.test(name)?20:15,targetRIR:2,restSeconds:75,weightIncrement:5}
     : heavy ? {sets:3,minReps:6,maxReps:10,targetRIR:3,restSeconds:150,weightIncrement:5}
     : {sets:3,minReps:8,maxReps:12,targetRIR:3,restSeconds:120,weightIncrement:5};
-  defaults.weightEntryType = assisted ? "Assisted Bodyweight" : bodyweight ? "Bodyweight Plus Added Weight" : dumbbell ? "Per Dumbbell" : plateLoaded ? "Plate-Loaded Total" : equipment.includes("Machine") || equipment.includes("Cable Station") ? "Machine Stack" : "Total Weight";
+  defaults.weightEntryType = assisted ? "Assisted Bodyweight" : bodyweight ? "Bodyweight Plus Added Weight" : dumbbell ? "Per Dumbbell" : plateLoaded ? "Plate-Loaded Total" : equipment.some(item=>/Machine/.test(item)) || equipment.includes("Cable Station") ? "Machine Stack" : "Total Weight";
   const tags = [];
   if (/incline|low-to-high/i.test(name)) tags.push("Upper Chest");
   if (/decline|high-to-low/i.test(name)) tags.push("Lower Chest");

@@ -328,6 +328,15 @@ dialog::backdrop { background: rgba(0,0,0,.75); backdrop-filter: blur(6px); }
 .favorite-button[aria-pressed="true"] { color: #fbbf24; border-color: #fbbf24; }
 .exercise-detail-list { display: grid; gap: 8px; }
 .exercise-detail-list p, .exercise-detail-list ul { margin: 0; }
+.profile-actions { margin-top: 14px; }
+.profile-section summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 800; }
+.onboarding-card { padding-bottom: calc(100px + env(safe-area-inset-bottom)); }
+.onboarding-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.onboarding-grid .wide { grid-column: 1 / -1; }
+.onboarding-actions { grid-template-columns: auto auto 1fr; }
+.baseline-card { border: 1px solid var(--border); border-radius: 14px; padding: 12px; margin-bottom: 10px; }
+.confidence-label { display: inline-block; border: 1px solid var(--accent); border-radius: 999px; padding: 4px 9px; color: var(--accent-2); font-size: .78rem; font-weight: 800; }
+.calibration-panel { border: 1px solid rgba(249,115,22,.4); background: rgba(249,115,22,.08); border-radius: 14px; padding: 12px; margin: 10px 0; }
 .program-template-card .workout-card-top { align-items: flex-start; }
 .preview-exercise summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
 .mesocycle-card, .meso-workout-card, .review-card {
@@ -359,6 +368,9 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   .choice-grid, .summary-grid { grid-template-columns: 1fr; }
   .preview-summary { grid-template-columns: 1fr 1fr; }
   .library-filter-grid { grid-template-columns: 1fr; }
+  .onboarding-grid { grid-template-columns: 1fr; }
+  .onboarding-grid .wide { grid-column: auto; }
+  .onboarding-actions { grid-template-columns: 1fr; }
   .update-notice { align-items: stretch; flex-direction: column; }
 }
 @media (min-width: 680px) {
