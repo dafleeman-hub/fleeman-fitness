@@ -4,8 +4,8 @@
   "description": "Personal workout planning and automatic progression.",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#070b12",
-  "theme_color": "#111827",
+  "background_color": "#05080c",
+  "theme_color": "#05080c",
   "icons": [
     {
       "src": "icons/icon-192.png",

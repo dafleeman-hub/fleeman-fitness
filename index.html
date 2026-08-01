@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#111827" />
+  <meta name="theme-color" content="#05080c" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Fleeman Fit" />
@@ -37,14 +37,47 @@
     </aside>
 
     <section id="homeView" class="view active">
-      <div class="hero-card">
-        <p class="eyebrow">READY WHEN YOU ARE</p>
+      <div class="hero-card dashboard-hero">
+        <div class="hero-status-row">
+          <p id="todaySessionBadge" class="eyebrow session-badge">READY WHEN YOU ARE</p>
+          <span id="todayMesoMeta" class="hero-meso-meta">SAVED WORKOUT</span>
+        </div>
         <h2 id="todayWorkoutName">Choose a workout</h2>
         <p id="todayWorkoutSummary">Select one of your saved workouts to begin.</p>
+        <div class="hero-metrics" aria-label="Workout status">
+          <div class="hero-progress-metric">
+            <span>SET PROGRESS</span>
+            <strong id="todayProgressValue">0 / 0 SETS</strong>
+            <div id="todayProgressSegments" class="segmented-progress" role="progressbar" aria-valuemin="0"></div>
+          </div>
+          <div id="todayElapsedMetric" class="hero-elapsed-metric hidden">
+            <span>ELAPSED TIME</span>
+            <strong id="todayElapsedValue">0:00</strong>
+          </div>
+        </div>
         <div class="hero-actions">
           <button id="previewTodayWorkoutButton" class="secondary-button hidden">Preview</button>
           <button id="startWorkoutButton" class="primary-button">Choose workout</button>
         </div>
+      </div>
+
+      <section class="dashboard-panel week-dashboard" aria-labelledby="weekDashboardTitle">
+        <div class="dashboard-panel-heading">
+          <h3 id="weekDashboardTitle">This week</h3>
+          <span id="weekDashboardSummary" class="small-note">No active mesocycle</span>
+        </div>
+        <div id="todayWeekStrip" class="week-strip" aria-live="polite"></div>
+      </section>
+
+      <div class="dashboard-split">
+        <section class="dashboard-panel" aria-labelledby="recoveryDashboardTitle">
+          <div class="dashboard-panel-heading"><h3 id="recoveryDashboardTitle">Recovery</h3><span class="dashboard-corner-mark" aria-hidden="true"></span></div>
+          <div id="todayRecoverySummary" class="dashboard-list"></div>
+        </section>
+        <section class="dashboard-panel" aria-labelledby="recentDashboardTitle">
+          <div class="dashboard-panel-heading"><h3 id="recentDashboardTitle">Recent progress</h3><span class="dashboard-corner-mark" aria-hidden="true"></span></div>
+          <div id="recentExerciseProgress" class="dashboard-list"></div>
+        </section>
       </div>
 
       <div class="section-heading">
@@ -52,9 +85,7 @@
       </div>
       <div id="quickWorkoutList" class="card-list"></div>
 
-      <div class="section-heading">
-        <h3>Recent progress</h3>
-      </div>
+      <div class="section-heading"><h3>Training totals</h3></div>
       <div id="progressSummary" class="stats-grid"></div>
     </section>
 
@@ -313,6 +344,14 @@
       <div id="exerciseHistoryContent" class="exercise-history-list"></div>
     </div>
   </dialog>
+
+  <nav class="mobile-dock" aria-label="Mobile navigation">
+    <button class="dock-tab active" data-dock-view="homeView" type="button"><span aria-hidden="true">⌂</span><small>Home</small></button>
+    <button class="dock-tab" data-dock-view="programsView" type="button"><span aria-hidden="true">▤</span><small>Programs</small></button>
+    <button class="dock-tab dock-train" data-dock-view="builderView" type="button"><span aria-hidden="true">＋</span><small>Workouts</small></button>
+    <button class="dock-tab" data-dock-view="historyView" type="button"><span aria-hidden="true">▥</span><small>History</small></button>
+    <button class="dock-tab" data-dock-view="profileView" type="button"><span aria-hidden="true">◯</span><small>Profile</small></button>
+  </nav>
 
   <template id="exerciseEditorTemplate">
     <div class="exercise-editor-card">

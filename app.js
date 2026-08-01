@@ -1,6 +1,6 @@
 
 const STORAGE_KEY = "fleemanFitnessDataV1";
-const APP_VERSION = "0.8.4-beta";
+const APP_VERSION = "0.9.0-beta";
 let previewReturnFocus = null;
 let previewScrollPosition = 0;
 const defaultData = {
@@ -344,6 +344,174 @@ function renderHome() {
     <div class="stat"><strong>${completedSets}</strong><span>Total sets logged</span></div>
     <div class="stat"><strong>${prs}</strong><span>Exercise bests</span></div>`;
   if (typeof renderMesocycleToday === "function") renderMesocycleToday();
+  renderTodayDashboard();
+}
+
+function dashboardSavedSession() {
+  if (typeof loadSavedActiveWorkout === "function") return loadSavedActiveWorkout();
+  return data.activeWorkoutSession || null;
+}
+
+function dashboardWorkoutContext() {
+  const paused = dashboardSavedSession();
+  if (paused) return { workout: paused, paused, context: paused.mesocycle || null };
+  const meso = data.mesocycles?.active;
+  if (meso && typeof nextMesoSlot === "function") {
+    const next = nextMesoSlot(meso);
+    if (next) return { workout: next.plan.workout, paused: null, context: { mesocycleId: meso.id, week: next.week, slot: next.slot } };
+  }
+  const selected = data.workouts.find(workout => workout.id === data.selectedWorkoutId) || null;
+  return { workout: selected, paused: null, context: null };
+}
+
+function dashboardExerciseDefinition(exercise) {
+  return definitionForExercise(exercise) || exercise.sessionPrescription || exercise;
+}
+
+function dashboardRecentExerciseResults(limit = 3) {
+  const seen = new Set();
+  const results = [];
+  for (const session of data.history) {
+    for (const exercise of session.exercises || []) {
+      const completed = (exercise.sets || []).filter(set => set.done);
+      if (!completed.length || exercise.skipped) continue;
+      const key = exercise.libraryExerciseId || normalizedExerciseName(exercise.name);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const best = completed.reduce((winner, set) => {
+        const score = Number(set.weight ?? exercise.weight) * Math.max(1, Number(set.reps));
+        const winnerScore = Number(winner.weight ?? exercise.weight) * Math.max(1, Number(winner.reps));
+        return score > winnerScore ? set : winner;
+      }, completed[0]);
+      results.push({ name: exercise.name, weight: Number(best.weight ?? exercise.weight) || 0, reps: Number(best.reps) || 0, date: session.date });
+      if (results.length >= limit) return results;
+    }
+  }
+  return results;
+}
+
+function dashboardRecoveryState(rating) {
+  if (rating == null) return { label: "CHECK IN", className: "pending", note: "Rate before training" };
+  if (Number(rating) === 0) return { label: "READY", className: "good", note: "Not sore" };
+  if (Number(rating) === 1) return { label: "MILD", className: "fair", note: "A little sore" };
+  if (Number(rating) === 2) return { label: "SORE", className: "warning", note: "Still feeling it" };
+  return { label: "HIGH", className: "danger", note: "Recovery recommended" };
+}
+
+function renderTodayDashboardLegacy() {
+  const { workout, paused, context } = dashboardWorkoutContext();
+  const exercises = workout?.exercises || [];
+  const completedSets = paused ? exercises.reduce((sum, exercise) => sum + (exercise.sets || []).filter(set => set.done).length, 0) : 0;
+  const totalSets = exercises.reduce((sum, exercise) => sum + (paused ? (exercise.sets || []).length : Number(exercise.sets || 0)), 0);
+  const progressValue = document.querySelector("#todayProgressValue");
+  const progressSegments = document.querySelector("#todayProgressSegments");
+  progressValue.textContent = `${completedSets} / ${totalSets} SETS`;
+  progressSegments.innerHTML = Array.from({ length: Math.max(1, totalSets) }, (_, index) => `<span class="${index < completedSets ? "complete" : ""}"></span>`).join("");
+  progressSegments.setAttribute("aria-label", `${completedSets} of ${totalSets} working sets completed`);
+  progressSegments.setAttribute("aria-valuemax", String(totalSets));
+  progressSegments.setAttribute("aria-valuenow", String(completedSets));
+
+  const elapsedMetric = document.querySelector("#todayElapsedMetric");
+  elapsedMetric.classList.toggle("hidden", !paused);
+  if (paused) {
+    const elapsed = Number(paused.elapsedMs) || Math.max(0, Date.now() - new Date(paused.startTime || paused.date).getTime());
+    document.querySelector("#todayElapsedValue").textContent = typeof formatElapsed === "function" ? formatElapsed(elapsed) : `${Math.floor(elapsed / 60000)}:${String(Math.floor(elapsed / 1000) % 60).padStart(2, "0")}`;
+  }
+
+  const activeMeso = data.mesocycles?.active;
+  document.querySelector("#todayMesoMeta").textContent = activeMeso && context
+    ? `${activeMeso.name} • WEEK ${context.week || 1}`
+    : paused ? "SAVED SESSION" : workout ? "SAVED WORKOUT" : "TRAINING DASHBOARD";
+
+  const weekStrip = document.querySelector("#todayWeekStrip");
+  const weekSummary = document.querySelector("#weekDashboardSummary");
+  if (activeMeso && typeof currentMesoPosition === "function") {
+    const week = context?.week || currentMesoPosition(activeMeso).week;
+    const completed = activeMeso.progress.completed.filter(item => item.week === week).length;
+    const skipped = activeMeso.progress.skipped.filter(item => item.week === week).length;
+    weekSummary.textContent = `${completed} completed${skipped ? ` • ${skipped} skipped` : ""} • Week ${week} of ${activeMeso.totalWeeks}`;
+    weekStrip.innerHTML = activeMeso.schedule.map((slot, index) => {
+      const done = activeMeso.progress.completed.some(item => item.week === week && item.slot === index);
+      const missed = activeMeso.progress.skipped.some(item => item.week === week && item.slot === index);
+      const current = context?.slot === index && !done && !missed;
+      const status = done ? "✓" : missed ? "—" : current ? "●" : "○";
+      const state = done ? "completed" : missed ? "skipped" : current ? "current" : "planned";
+      return `<div class="week-day ${state}" aria-label="${escapeHtml(mesoWeekdays[index === context?.slot ? slot.dayIndex : slot.dayIndex])}: ${escapeHtml(slot.workout.name)}, ${state}"><span>${escapeHtml(mesoWeekdays[slot.dayIndex].slice(0,3).toUpperCase())}</span><strong>${index + 1}</strong><i aria-hidden="true">${status}</i></div>`;
+    }).join("");
+  } else {
+    weekSummary.textContent = "Create a mesocycle to plan the week";
+    weekStrip.innerHTML = ["MON","TUE","WED","THU","FRI","SAT","SUN"].map(day => `<div class="week-day empty"><span>${day}</span><strong>•</strong><i aria-hidden="true">○</i></div>`).join("");
+  }
+
+  const recovery = document.querySelector("#todayRecoverySummary");
+  const definitions = exercises.map(dashboardExerciseDefinition);
+  const muscles = workout ? workoutMuscles({ exercises: definitions }) : [];
+  const ratings = paused?.soreness?.ratings || {};
+  recovery.innerHTML = muscles.length ? muscles.map(muscle => {
+    const state = dashboardRecoveryState(ratings[muscle]);
+    return `<div class="dashboard-row"><span class="muscle-mark" aria-hidden="true"></span><div><strong>${escapeHtml(sorenessLabel(muscle))}</strong><small>${escapeHtml(state.note)}</small></div><b class="status-chip ${state.className}">${state.label}</b></div>`;
+  }).join("") : '<p class="dashboard-empty">Choose a workout to see today’s recovery check-in.</p>';
+
+  const recent = dashboardRecentExerciseResults();
+  document.querySelector("#recentExerciseProgress").innerHTML = recent.length ? recent.map(result => `<div class="dashboard-row"><span class="performance-mark" aria-hidden="true">◆</span><div><strong>${escapeHtml(result.name)}</strong><small>${new Date(result.date).toLocaleDateString()}</small></div><b class="performance-value">${displayWeightValue(result.weight, data.profile?.units)} ${weightUnit(data.profile?.units)}<small>${result.reps} reps</small></b></div>`).join("") : '<p class="dashboard-empty">Complete a workout to begin building recent progress.</p>';
+}
+
+function renderTodayDashboard() {
+  const { workout, paused, context } = dashboardWorkoutContext();
+  const exercises = workout?.exercises || [];
+  const completedSets = paused ? exercises.reduce((sum, exercise) => sum + (exercise.sets || []).filter(set => set.done).length, 0) : 0;
+  const totalSets = exercises.reduce((sum, exercise) => sum + (paused ? (exercise.sets || []).length : Number(exercise.sets || 0)), 0);
+  const progressValue = document.querySelector("#todayProgressValue");
+  const progressSegments = document.querySelector("#todayProgressSegments");
+  progressValue.textContent = `${completedSets} / ${totalSets} SETS`;
+  progressSegments.innerHTML = Array.from({ length: Math.max(1, totalSets) }, (_, index) => `<span class="${index < completedSets ? "complete" : ""}"></span>`).join("");
+  progressSegments.setAttribute("aria-label", `${completedSets} of ${totalSets} working sets completed`);
+  progressSegments.setAttribute("aria-valuemax", String(totalSets));
+  progressSegments.setAttribute("aria-valuenow", String(completedSets));
+
+  const elapsedMetric = document.querySelector("#todayElapsedMetric");
+  elapsedMetric.classList.toggle("hidden", !paused);
+  if (paused) {
+    const elapsed = Number(paused.elapsedMs) || Math.max(0, Date.now() - new Date(paused.startTime || paused.date).getTime());
+    document.querySelector("#todayElapsedValue").textContent = typeof formatElapsed === "function" ? formatElapsed(elapsed) : `${Math.floor(elapsed / 60000)}:${String(Math.floor(elapsed / 1000) % 60).padStart(2, "0")}`;
+  }
+
+  const activeMeso = data.mesocycles?.active;
+  document.querySelector("#todayMesoMeta").textContent = activeMeso && context
+    ? `${activeMeso.name} | WEEK ${context.week || 1}`
+    : paused ? "SAVED SESSION" : workout ? "SAVED WORKOUT" : "TRAINING DASHBOARD";
+
+  const weekStrip = document.querySelector("#todayWeekStrip");
+  const weekSummary = document.querySelector("#weekDashboardSummary");
+  if (activeMeso && typeof currentMesoPosition === "function") {
+    const week = context?.week || currentMesoPosition(activeMeso).week;
+    const completed = activeMeso.progress.completed.filter(item => item.week === week).length;
+    const skipped = activeMeso.progress.skipped.filter(item => item.week === week).length;
+    weekSummary.textContent = `${completed} completed${skipped ? ` | ${skipped} skipped` : ""} | Week ${week} of ${activeMeso.totalWeeks}`;
+    weekStrip.innerHTML = activeMeso.schedule.map((slot, index) => {
+      const done = activeMeso.progress.completed.some(item => item.week === week && item.slot === index);
+      const missed = activeMeso.progress.skipped.some(item => item.week === week && item.slot === index);
+      const current = context?.slot === index && !done && !missed;
+      const status = done ? "DONE" : missed ? "SKIP" : current ? "NOW" : "NEXT";
+      const state = done ? "completed" : missed ? "skipped" : current ? "current" : "planned";
+      return `<div class="week-day ${state}" aria-label="${escapeHtml(mesoWeekdays[slot.dayIndex])}: ${escapeHtml(slot.workout.name)}, ${state}"><span>${escapeHtml(mesoWeekdays[slot.dayIndex].slice(0,3).toUpperCase())}</span><strong>${index + 1}</strong><i aria-hidden="true">${status}</i></div>`;
+    }).join("");
+  } else {
+    weekSummary.textContent = "Create a mesocycle to plan the week";
+    weekStrip.innerHTML = ["MON","TUE","WED","THU","FRI","SAT","SUN"].map(day => `<div class="week-day empty"><span>${day}</span><strong>-</strong><i aria-hidden="true">OPEN</i></div>`).join("");
+  }
+
+  const recovery = document.querySelector("#todayRecoverySummary");
+  const definitions = exercises.map(dashboardExerciseDefinition);
+  const muscles = workout ? workoutMuscles({ exercises: definitions }) : [];
+  const ratings = paused?.soreness?.ratings || {};
+  recovery.innerHTML = muscles.length ? muscles.map(muscle => {
+    const state = dashboardRecoveryState(ratings[muscle]);
+    return `<div class="dashboard-row"><span class="muscle-mark" aria-hidden="true"></span><div><strong>${escapeHtml(sorenessLabel(muscle))}</strong><small>${escapeHtml(state.note)}</small></div><b class="status-chip ${state.className}">${state.label}</b></div>`;
+  }).join("") : '<p class="dashboard-empty">Choose a workout to see today\'s recovery check-in.</p>';
+
+  const recent = dashboardRecentExerciseResults();
+  document.querySelector("#recentExerciseProgress").innerHTML = recent.length ? recent.map(result => `<div class="dashboard-row"><span class="performance-mark" aria-hidden="true">+</span><div><strong>${escapeHtml(result.name)}</strong><small>${new Date(result.date).toLocaleDateString()}</small></div><b class="performance-value">${displayWeightValue(result.weight, data.profile?.units)} ${weightUnit(data.profile?.units)}<small>${result.reps} reps</small></b></div>`).join("") : '<p class="dashboard-empty">Complete a workout to begin building recent progress.</p>';
 }
 
 function calculatePRs() {
@@ -1032,13 +1200,23 @@ function applyMissingWeightRecommendations(exercises){let count=0;exercises.forE
 function standardRecalculationExercises(){return[...data.workouts.flatMap(workout=>workout.exercises),...data.mesocycles.drafts.flatMap(meso=>meso.schedule.flatMap(slot=>slot.workout.exercises))];}
 function activeMesocycleExercises(){return data.mesocycles?.active?.schedule?.flatMap(slot=>slot.workout.exercises)||[];}
 
-document.querySelectorAll(".tab").forEach(tab => tab.onclick = () => {
+function activateAppView(viewId) {
   document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
   document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+  document.querySelectorAll(".dock-tab").forEach(button => button.classList.toggle("active", button.dataset.dockView === viewId));
+  const tab = document.querySelector(`.tab[data-view="${viewId}"]`);
+  const view = document.querySelector(`#${viewId}`);
+  if (!tab || !view) return;
   tab.classList.add("active");
-  document.querySelector(`#${tab.dataset.view}`).classList.add("active");
+  view.classList.add("active");
+  if (viewId === "homeView") renderHome();
+  if (viewId === "programsView" && typeof renderPrograms === "function") renderPrograms();
   tab.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
-});
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+document.querySelectorAll(".tab").forEach(tab => tab.onclick = () => activateAppView(tab.dataset.view));
+document.querySelectorAll(".dock-tab").forEach(button => button.onclick = () => activateAppView(button.dataset.dockView));
 
 document.querySelector("#startWorkoutButton").onclick = () => {
   if (data.selectedWorkoutId) startWorkout(data.selectedWorkoutId);
