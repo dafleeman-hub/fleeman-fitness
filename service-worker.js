@@ -1,8 +1,19 @@
 
-const CACHE = "fleeman-fitness-v26";
-const ASSETS = ["./", "./index.html", "./styles.css", "./exercise-library.js", "./program-templates.js", "./starting-weight-rules.js", "./app.js", "./mesocycles.js", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png"];
+const CACHE = "fleeman-fitness-v33";
+const CORE_ASSETS = ["./", "./index.html", "./styles.css", "./exercise-library.js", "./program-templates.js", "./starting-weight-rules.js", "./app.js", "./live-workout.js", "./mesocycles.js"];
+const OPTIONAL_ASSETS = ["./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png"];
 self.addEventListener("install", event => event.waitUntil(
-  caches.open(CACHE).then(cache => cache.addAll(ASSETS))
+  caches.open(CACHE).then(async cache => {
+    await cache.addAll(CORE_ASSETS);
+    await Promise.all(OPTIONAL_ASSETS.map(async asset => {
+      try {
+        const response = await fetch(asset);
+        if (response.ok) await cache.put(asset, response);
+      } catch {
+        // Optional install assets should not prevent the core workout app from caching.
+      }
+    }));
+  })
 ));
 self.addEventListener("activate", event => event.waitUntil(
   caches.keys()

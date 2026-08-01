@@ -22,7 +22,7 @@ body {
   min-height: 100vh;
 }
 
-button, input, select { font: inherit; }
+button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 .app-shell {
   width: min(760px, 100%);
@@ -154,13 +154,18 @@ h3 { margin-bottom: 0; }
 .stat span { color: var(--muted); font-size: .76rem; }
 .panel { padding: 18px; display: grid; gap: 14px; }
 label { display: grid; gap: 7px; color: var(--muted); font-size: .88rem; font-weight: 700; }
-input, select {
+input, select, textarea {
   width: 100%;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: #0b1220;
   color: var(--text);
   padding: 12px;
+}
+textarea { resize: vertical; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible {
+  outline: 3px solid #60a5fa;
+  outline-offset: 2px;
 }
 .file-button input { display: none; }
 .icon-button {
@@ -268,6 +273,88 @@ dialog::backdrop { background: rgba(0,0,0,.75); backdrop-filter: blur(6px); }
 .joint-grid { display: flex; flex-wrap: wrap; gap: 6px; }
 .joint-choice { display: inline-flex; grid-template-columns: auto 1fr; align-items: center; gap: 5px; background: #0b1220; border: 1px solid var(--border); border-radius: 10px; padding: 7px; }
 .joint-choice input { width: auto; }
+.setting-toggle { display: flex; grid-template-columns: auto 1fr; align-items: center; gap: 10px; min-height: 44px; }
+.setting-toggle input { width: 22px; height: 22px; }
+
+.session-dialog { padding-top: 0; }
+.live-workout-header {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  margin: 0 -16px 14px;
+  padding: max(10px, env(safe-area-inset-top)) 16px 10px;
+  background: rgba(7,11,18,.96);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(16px);
+}
+.live-workout-title-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; align-items: start; }
+.live-workout-title { min-width: 0; }
+.live-workout-title h2 { margin: 0; font-size: clamp(1.05rem,5vw,1.4rem); line-height: 1.15; overflow-wrap: anywhere; }
+.live-workout-title .eyebrow { white-space: normal; }
+.live-workout-header-actions { display: flex; gap: 7px; align-items: stretch; }
+.live-workout-header-actions button { width: auto; min-height: 44px; padding: 9px 11px; white-space: nowrap; }
+.live-workout-stats { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; margin-top: 9px; color: var(--muted); font-size: .76rem; font-weight: 800; }
+.live-workout-progress { height: 7px; margin: 7px 0 4px; }
+.live-workout-header > .small-note { margin: 0; }
+
+.exercise-card.current-exercise { border-color: rgba(249,115,22,.75); box-shadow: 0 0 0 1px rgba(249,115,22,.25), 0 16px 38px rgba(0,0,0,.26); }
+.exercise-card.collapsed { padding: 0; }
+.exercise-card.skipped-exercise { opacity: .78; }
+.live-exercise-summary { width: 100%; min-height: 58px; border: 0; border-radius: 18px; padding: 13px 14px; background: transparent; color: var(--text); display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; align-items: center; text-align: left; }
+.exercise-card:not(.collapsed) .live-exercise-summary { border-bottom: 1px solid var(--border); border-radius: 18px 18px 0 0; }
+.exercise-summary-copy { min-width: 0; display: grid; gap: 3px; }
+.exercise-summary-copy strong { font-size: 1rem; overflow-wrap: anywhere; }
+.exercise-summary-copy > span { color: var(--muted); font-size: .76rem; overflow-wrap: anywhere; }
+.exercise-summary-copy .exercise-warning-label { color: #fdba74; font-weight: 800; }
+.exercise-summary-chevron { font-size: 1.4rem; color: var(--accent-2); }
+.live-exercise-content { padding-top: 13px; }
+.expanded-exercise-name { font-size: 1.25rem; overflow-wrap: anywhere; }
+.exercise-identity { color: var(--muted); line-height: 1.55; }
+.exercise-identity span { font-size: .84rem; }
+.exercise-progress-copy { margin: 12px 0; color: var(--muted); font-size: .84rem; }
+.exercise-progress-copy .progress-track { height: 7px; margin: 7px 0; }
+.today-prescription, .previous-performance, .adjustment-summary, .exercise-notes {
+  background: #0b1220;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  margin: 11px 0;
+}
+.today-prescription h4, .previous-performance h4, .exercise-notes h4 { margin: 0 0 7px; }
+.today-prescription p, .previous-performance p { margin-bottom: 5px; }
+.previous-performance .workout-card-top { color: var(--muted); }
+.adjustment-summary { border-color: rgba(249,115,22,.42); background: rgba(249,115,22,.08); }
+.adjustment-columns { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; margin-top: 9px; }
+.adjustment-columns p { margin: 0; padding: 9px; border-radius: 10px; background: rgba(7,11,18,.7); }
+.adjustment-columns span { display: block; color: var(--accent-2); font-weight: 800; margin-bottom: 4px; }
+.recommended-weight-field { margin: 10px 0; }
+
+.live-set-card { background: #0b1220; border: 1px solid var(--border); border-radius: 15px; padding: 12px; display: grid; gap: 10px; }
+.live-set-card.completed { border-color: rgba(34,197,94,.42); background: rgba(20,83,45,.2); }
+.live-set-card-heading { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.live-set-card-heading span { color: var(--muted); font-size: .76rem; text-align: right; }
+.set-input-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
+.set-input-grid input { min-height: 48px; font-size: 1rem; }
+.complete-set-card { min-height: 44px; }
+
+.exercise-action-menu { margin: 10px 0; border: 1px solid var(--border); border-radius: 13px; background: rgba(11,18,32,.8); }
+.exercise-action-menu > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; padding: 10px 12px; color: var(--accent-2); font-weight: 800; }
+.exercise-action-menu-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; padding: 0 10px 10px; }
+.exercise-action-menu-grid button { min-height: 44px; padding: 9px; white-space: normal; }
+.swap-control { display: grid; gap: 8px; padding: 0 10px 10px; }
+.skip-reason-control { padding: 0 10px 10px; }
+.exercise-notes { display: grid; gap: 10px; }
+.exercise-notes textarea { min-height: 64px; }
+.answer-later { width: 100%; min-height: 44px; margin-top: 9px; }
+.save-exercise-feedback { min-height: 44px; margin-top: 9px; }
+
+.compact-dialog-card { min-height: auto; border-radius: 22px; margin: max(20px,env(safe-area-inset-top)) 12px; }
+.dialog-action-stack { display: grid; gap: 9px; }
+.dialog-action-stack button { min-height: 48px; }
+.exercise-history-list { display: grid; gap: 10px; }
+.exercise-history-entry { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 11px; }
+.exercise-history-entry summary { min-height: 44px; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+.exercise-history-entry p { color: var(--muted); margin-bottom: 6px; }
 .future-warning { border: 1px solid rgba(239,68,68,.35); background: rgba(239,68,68,.1); padding: 11px; border-radius: 13px; margin: 10px 0; }
 .recommendation-panel {
   background: rgba(249,115,22,.1);
@@ -372,6 +459,17 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   .onboarding-grid .wide { grid-column: auto; }
   .onboarding-actions { grid-template-columns: 1fr; }
   .update-notice { align-items: stretch; flex-direction: column; }
+  .live-workout-title-row { grid-template-columns: 1fr; }
+  .live-workout-header-actions { width: 100%; }
+  .live-workout-header-actions button { flex: 1; white-space: normal; }
+  .live-workout-stats { font-size: .72rem; }
+  .exercise-action-menu-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 340px) {
+  .live-workout-header-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .live-workout-header-actions button { padding-inline: 7px; font-size: .78rem; }
+  .set-input-grid, .adjustment-columns { grid-template-columns: 1fr; }
+  .exercise-action-menu-grid { grid-template-columns: 1fr; }
 }
 @media (min-width: 680px) {
   .dialog-card { min-height: auto; border-radius: 24px; margin: 24px 0; }

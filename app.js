@@ -1,13 +1,14 @@
 
 const STORAGE_KEY = "fleemanFitnessDataV1";
-const APP_VERSION = "0.7.2-beta";
+const APP_VERSION = "0.8.4-beta";
 let previewReturnFocus = null;
 let previewScrollPosition = 0;
 const defaultData = {
-  settings: { increment: 5, rest: 90 },
+  settings: { increment: 5, rest: 90, autoCollapseExercises: true },
   selectedWorkoutId: "push-a",
+  activeWorkoutSession: null,
   mesocycles: { drafts: [], active: null, completed: [] },
-  exerciseLibraryUser: { favorites: [], recent: [], customExercises: [] },
+  exerciseLibraryUser: { favorites: [], recent: [], customExercises: [], exercisePreferences: {} },
   profile: {
     id:"local-user",displayName:"",units:"imperial",height:{value:null,unit:"in"},bodyWeight:{value:null,unit:"lb"},age:null,gender:"",experienceLevel:"",yearsExperience:null,
     trainingBackground:{barbell:"",dumbbell:"",machines:"",structuredPrograms:"",comfortableWithRIR:false,knownWorkingWeights:"unknown"},currentTrainingDays:null,preferredTrainingDays:null,primaryGoal:"",customGoal:"",
@@ -211,6 +212,24 @@ function jointPainPlanFor(exerciseId) {
 function definitionForExercise(exercise){return allExerciseDefinitions().find(item=>item.id===exercise.libraryExerciseId)||allExerciseDefinitions().find(item=>normalizedExerciseName(item.name)===normalizedExerciseName(exercise.name));}
 function recommendationResult(weight,label,reason,confidence,calibrationRecommended=false){return{weight:Math.max(0,Number(weight)||0),label,reason,confidence,calibrationRecommended};}
 
+function hasPriorExerciseUse(exercise) {
+  const definition = definitionForExercise(exercise) || exercise;
+  const libraryExerciseId = exercise.libraryExerciseId || definition.id || null;
+  const exerciseName = normalizedExerciseName(exercise.name || definition.name || "");
+  const matchesExercise = item =>
+    (libraryExerciseId && item.libraryExerciseId === libraryExerciseId) ||
+    normalizedExerciseName(item.name || item.exerciseName || "") === exerciseName;
+  const completedInHistory = data.history.some(session =>
+    session.exercises?.some(item => matchesExercise(item) && item.sets?.some(set => set.done))
+  );
+  if (completedInHistory) return true;
+  return (data.profile?.calibrationHistory || []).some(item => matchesExercise(item));
+}
+
+function startingWeightCalibrationEligible(exercise, context = null) {
+  return Boolean(context?.mesocycleId) && Number(context?.week) === 1 && !hasPriorExerciseUse(exercise);
+}
+
 function startingWeightRecommendation(exercise){
   const definition=definitionForExercise(exercise)||exercise;const entry=exercise.weightEntryType||definition.defaults?.weightEntryType||"Total Weight";const increment=exercise.increment||definition.defaults?.weightIncrement||data.settings.increment;
   if(entry==="Bodyweight"||entry==="Bodyweight Plus Added Weight")return recommendationResult(0,"Bodyweight","This movement begins with bodyweight unless reliable added-weight history exists.","high",false);
@@ -254,6 +273,7 @@ function renderAll() {
   if (typeof renderPrograms === "function") renderPrograms();
   document.querySelector("#defaultIncrement").value = data.settings.increment;
   document.querySelector("#defaultRest").value = data.settings.rest;
+  document.querySelector("#autoCollapseExercises").checked = data.settings.autoCollapseExercises !== false;
   document.querySelector("#appVersion").textContent = APP_VERSION;
   renderProfile();
   renderUpdateNotice();
@@ -583,7 +603,10 @@ function deleteWorkout(id) {
 }
 
 function workoutMuscles(workout) {
-  return [...new Set(workout.exercises.flatMap(exerciseMuscles))];
+  return [...new Set((workout?.exercises || []).map(exercise => {
+    const targeted = exercise.targetMuscle || exercise.primaryMuscle || (exercise.muscle && exercise.muscle !== "Other" ? exercise.muscle : "");
+    return String(targeted || exerciseMuscles(exercise)[0] || "").toLowerCase();
+  }).filter(Boolean))];
 }
 
 function isPremadeWorkout(workout) {
@@ -816,7 +839,9 @@ function beginWorkout(id, sorenessRecord, context = pendingWorkoutContext, decis
     mesocycle: context ? structuredClone(context) : null,
     exercises: workout.exercises.map(e => {
       const rec = recommendationFor(e);
-      const starting = rec.starting || e.startingWeightRecommendation || startingWeightRecommendation(e);
+      const starting = structuredClone(rec.starting || e.startingWeightRecommendation || startingWeightRecommendation(e));
+      const calibrationAllowed = Boolean(starting.calibrationRecommended) && startingWeightCalibrationEligible(e, context);
+      starting.calibrationRecommended = calibrationAllowed;
       const change = sorenessRecord?.changes?.find(item => item.exerciseId === e.id);
       const prescription = decision === "original" || !change ? change?.original : change.adjusted;
       if (decision === "skip-high" && change?.severity === 3) prescription.sets = 0;
@@ -835,13 +860,13 @@ function beginWorkout(id, sorenessRecord, context = pendingWorkoutContext, decis
         recommendation: rec.note,
         startingWeightRecommendation: structuredClone(starting),
         calibrationAttempts: [],
-        calibrationComplete: !starting.calibrationRecommended,
+        calibrationComplete: !calibrationAllowed,
         calibrationStarted: false,
         calibrationMaxed: false,
-        calibrationDecision: starting.calibrationRecommended ? "pending" : "not-needed",
+        calibrationDecision: calibrationAllowed ? "pending" : "not-needed",
         feedback: "about-right",
         targetRir: plannedRir,
-        jointPain: { rating: 1, joints: [] },
+        jointPain: { rating: null, joints: [] },
         priorPainPlan: pain,
         painRecommendationDecision: pain.rating >= 4 ? "pending" : pain.rating === 3 ? "accepted" : "none",
         reducedPainSets,
@@ -863,7 +888,7 @@ function renderSession() {
   const workout = data.workouts.find(w => w.id === currentSession.workoutId);
 
   currentSession.exercises.forEach((ex, exIndex) => {
-    const definition = workout.exercises.find(e => e.id === ex.exerciseId) || data.workouts.flatMap(item => item.exercises).find(e => e.id === ex.exerciseId);
+    const definition = ex.sessionPrescription || workout.exercises.find(e => e.id === ex.exerciseId) || data.workouts.flatMap(item => item.exercises).find(e => e.id === ex.exerciseId);
     const painDescriptions = ["", "No joint pain", "Minor discomfort", "Noticeable pain", "Significant pain", "Severe pain or unable to perform normally"];
     const joints = ["Shoulder","Elbow","Wrist","Hand","Hip","Knee","Ankle","Foot","Lower back","Upper back","Neck","Other"];
     const painPlan = ex.priorPainPlan || { rating: 1, joints: [] };
@@ -889,8 +914,8 @@ function renderSession() {
         <button class="feedback-button" data-feedback="failed">Failed target</button>
       </div>
       <p class="small-note">Did you experience joint pain during this exercise?</p>
-      <div class="pain-scale">${[1,2,3,4,5].map(rating=>`<button class="pain-button ${ex.jointPain.rating===rating?"active":""}" data-pain="${rating}" aria-label="Joint pain ${rating}: ${painDescriptions[rating]}"><span>${rating}</span><small>${painDescriptions[rating]}</small></button>`).join("")}</div>
-      <p class="pain-description ${ex.jointPain.rating>=4?"recovery-warning":""}">${ex.jointPain.rating===4?"Significant joint pain was reported. Consider replacing this exercise and avoiding movements that reproduce the pain.":ex.jointPain.rating===5?"Severe joint pain was reported. Stop using this exercise if it reproduces the pain. Consider seeking evaluation from a qualified medical professional.":painDescriptions[ex.jointPain.rating]}</p>
+      <div class="pain-scale">${[1,2,3,4,5].map(rating=>`<button class="pain-button ${ex.jointPainAnswered&&ex.jointPain.rating===rating?"active":""}" data-pain="${rating}" aria-pressed="${ex.jointPainAnswered&&ex.jointPain.rating===rating}" aria-label="Joint pain ${rating}: ${painDescriptions[rating]}"><span>${rating}</span><small>${painDescriptions[rating]}</small></button>`).join("")}</div>
+      <p class="pain-description ${ex.jointPain.rating>=4?"recovery-warning":""}">${!ex.jointPainAnswered?"Choose the joint-pain rating that applies.":ex.jointPain.rating===4?"Significant joint pain was reported. Consider replacing this exercise and avoiding movements that reproduce the pain.":ex.jointPain.rating===5?"Severe joint pain was reported. Stop using this exercise if it reproduces the pain. Consider seeking evaluation from a qualified medical professional.":painDescriptions[ex.jointPain.rating]}</p>
       <div class="joint-grid">${joints.map(joint=>`<label class="joint-choice"><input type="checkbox" value="${joint}" ${ex.jointPain.joints.includes(joint)?"checked":""}>${joint}</label>`).join("")}</div>`;
     card.querySelector(".session-weight").oninput = e => ex.weight = internalWeightValue(e.target.value,data.profile?.units);
     card.querySelector(".calibration-minus")?.addEventListener("click",()=>{const increment=definition.increment||definition.defaults?.weightIncrement||data.settings.increment;ex.weight=Math.max(0,roundStartingWeight(ex.weight-increment,increment));renderSession();});
@@ -958,7 +983,7 @@ function renderSession() {
       btn.classList.toggle("active", btn.dataset.feedback === ex.feedback);
       btn.onclick = () => { ex.feedback = btn.dataset.feedback; renderSession(); };
     });
-    card.querySelectorAll(".pain-button").forEach(btn => btn.onclick = () => { ex.jointPain.rating = Number(btn.dataset.pain); renderSession(); });
+    card.querySelectorAll(".pain-button").forEach(btn => btn.onclick = () => { ex.jointPain.rating = Number(btn.dataset.pain); ex.jointPainAnswered = ex.jointPain.rating === 1; renderSession(); });
     card.querySelectorAll(".joint-choice input").forEach(input => input.onchange = () => {
       ex.jointPain.joints = [...card.querySelectorAll(".joint-choice input:checked")].map(item => item.value);
     });

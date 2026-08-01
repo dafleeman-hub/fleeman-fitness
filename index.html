@@ -146,6 +146,10 @@
             <option value="180">180 seconds</option>
           </select>
         </label>
+        <label class="setting-toggle">
+          <input id="autoCollapseExercises" type="checkbox" checked />
+          <span>Automatically collapse completed exercises after feedback</span>
+        </label>
         <button id="exportButton" class="secondary-button">Export backup</button>
         <label class="file-button">
           Import backup
@@ -280,6 +284,36 @@
     </div>
   </dialog>
 
+  <dialog id="sessionExitDialog" aria-labelledby="sessionExitTitle">
+    <div class="dialog-card compact-dialog-card">
+      <div class="dialog-header"><div><p class="eyebrow">WORKOUT IN PROGRESS</p><h2 id="sessionExitTitle">Pause or exit?</h2></div></div>
+      <p>Your completed sets and entered values can be saved on this device.</p>
+      <div class="dialog-action-stack">
+        <button id="continueSessionButton" class="primary-button" type="button">Continue Workout</button>
+        <button id="saveSessionButton" class="secondary-button" type="button">Save Workout in Progress</button>
+        <button id="discardSessionButton" class="danger-button" type="button">Discard Workout</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="resumeSessionDialog" aria-labelledby="resumeSessionTitle">
+    <div class="dialog-card compact-dialog-card">
+      <div class="dialog-header"><div><p class="eyebrow">WORKOUT IN PROGRESS</p><h2 id="resumeSessionTitle">Resume your workout?</h2></div></div>
+      <p id="resumeSessionSummary"></p>
+      <div class="dialog-action-stack">
+        <button id="resumeSessionButton" class="primary-button" type="button">Resume Workout</button>
+        <button id="discardSavedSessionButton" class="danger-button" type="button">Discard Workout</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="exerciseHistoryDialog" aria-labelledby="exerciseHistoryTitle">
+    <div class="dialog-card preview-dialog-card">
+      <div class="dialog-header sticky"><div><p class="eyebrow">EXERCISE HISTORY</p><h2 id="exerciseHistoryTitle">Exercise history</h2></div><button id="closeExerciseHistoryButton" class="icon-button" type="button" aria-label="Close exercise history">×</button></div>
+      <div id="exerciseHistoryContent" class="exercise-history-list"></div>
+    </div>
+  </dialog>
+
   <template id="exerciseEditorTemplate">
     <div class="exercise-editor-card">
       <div class="exercise-editor-top">
@@ -302,6 +336,7 @@
   <script src="program-templates.js"></script>
   <script src="starting-weight-rules.js"></script>
   <script src="app.js"></script>
+  <script src="live-workout.js"></script>
   <script src="mesocycles.js"></script>
 </body>
 </html>
