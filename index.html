@@ -28,7 +28,6 @@
       <button class="tab" data-view="builderView">Workouts</button>
       <button class="tab" data-view="historyView">History</button>
       <button class="tab" data-view="profileView">Profile</button>
-      <button class="tab" data-view="settingsView">Settings</button>
     </nav>
 
     <aside id="updateNotice" class="update-notice hidden" role="status" aria-live="polite">
@@ -155,11 +154,10 @@
         <button id="exportProfileButton" class="secondary-button">Export Profile Data</button>
         <p class="small-note">Your profile and workout data are stored on this device unless you export a backup.</p>
       </div>
-    </section>
-
-    <section id="settingsView" class="view">
-      <div class="panel">
-        <h2>Settings</h2>
+      <div class="section-heading profile-settings-heading">
+        <div><p class="eyebrow">APP PREFERENCES</p><h2>Settings</h2></div>
+      </div>
+      <div class="panel profile-settings-panel">
         <label>
           Default weight increase
           <select id="defaultIncrement">

@@ -1,6 +1,6 @@
 
 const STORAGE_KEY = "fleemanFitnessDataV1";
-const APP_VERSION = "0.9.0-beta";
+const APP_VERSION = "0.9.2-beta";
 let previewReturnFocus = null;
 let previewScrollPosition = 0;
 const defaultData = {

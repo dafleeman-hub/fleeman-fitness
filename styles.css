@@ -802,3 +802,49 @@ dialog { width: min(920px, 100%); }
   .stat strong { font-size: 1.2rem; }
   .stat span { font-size: .66rem; }
 }
+
+/* One navigation system: the fixed dock replaces the duplicate top menu. */
+.tabs { display: none !important; }
+.topbar { margin-bottom: 20px; }
+.app-shell { padding-bottom: calc(104px + env(safe-area-inset-bottom)); }
+.mobile-dock {
+  position: fixed;
+  z-index: 20;
+  left: 50%;
+  right: auto;
+  bottom: max(7px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: repeat(5,minmax(0,1fr));
+  gap: 2px;
+  width: min(700px, calc(100% - 16px));
+  min-height: 67px;
+  padding: 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: rgba(10,14,19,.96);
+  box-shadow: 0 -12px 34px rgba(0,0,0,.48), inset 0 1px rgba(255,255,255,.04);
+  backdrop-filter: blur(16px);
+}
+.dock-tab {
+  min-width: 0;
+  min-height: 55px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #89929d;
+  padding: 5px 2px;
+}
+.dock-tab span, .dock-tab small { display: block; }
+.dock-tab span { font-family: system-ui,sans-serif; font-size: 1.25rem; line-height: 1.15; }
+.dock-tab small { margin-top: 2px; font-size: .61rem; text-transform: uppercase; letter-spacing: .045em; }
+.dock-tab.active { color: #fff; background: #202832; box-shadow: inset 0 -2px var(--accent); }
+.dock-tab.dock-train { color: #0b0d10; background: linear-gradient(135deg, #ff4d00, #ff8426); }
+.dock-tab.dock-train.active { box-shadow: 0 0 0 1px #ff9b55, 0 0 18px rgba(255,90,10,.28); }
+.profile-settings-heading { margin-bottom: 10px; }
+.profile-settings-panel { margin-bottom: 8px; }
+
+@media (max-width: 430px) {
+  .mobile-dock { width: calc(100% - 10px); bottom: max(5px, env(safe-area-inset-bottom)); }
+  .dock-tab small { font-size: .55rem; letter-spacing: .015em; }
+}
