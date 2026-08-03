@@ -1,10 +1,11 @@
 
 const STORAGE_KEY = "fleemanFitnessDataV1";
-const APP_VERSION = "0.9.2-beta";
+const APP_VERSION = "1.0.0-beta";
 let previewReturnFocus = null;
 let previewScrollPosition = 0;
 const defaultData = {
   settings: { increment: 5, rest: 90, autoCollapseExercises: true },
+  ui: { activeView: "homeView", librarySection: "premade" },
   selectedWorkoutId: "push-a",
   activeWorkoutSession: null,
   mesocycles: { drafts: [], active: null, completed: [] },
@@ -54,6 +55,7 @@ const defaultData = {
 
 let data = loadData();
 migrateExerciseReferences(data);
+data.ui = migrateNavigationState(data.ui || {});
 if (migrateBuiltInWorkoutNames(data)) localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 let currentSession = null;
 let deferredPrompt = null;
@@ -86,6 +88,22 @@ function loadData() {
   } catch {
     return structuredClone(defaultData);
   }
+}
+
+function migrateNavigationState(ui) {
+  const oldValue = ui.activeView || ui.activeTab || ui.selectedTab || "homeView";
+  const routeMap = {
+    home: "homeView", homeView: "homeView",
+    programs: "builderView", programsView: "programsView",
+    workouts: "programsView", builderView: "builderView",
+    library: "builderView", libraryView: "builderView",
+    build: "programsView", buildView: "programsView",
+    history: "historyView", historyView: "historyView",
+    profile: "profileView", profileView: "profileView"
+  };
+  const activeView = routeMap[oldValue] || "homeView";
+  const allowedSections = ["premade", "workouts", "exercises", "favorites", "recent"];
+  return { activeView, librarySection: allowedSections.includes(ui.librarySection) ? ui.librarySection : "premade" };
 }
 
 function migrateBuiltInWorkoutNames(target) {
@@ -164,6 +182,7 @@ function mergeWithDefaults(saved) {
     ...structuredClone(defaultData),
     ...saved,
     settings: { ...defaultData.settings, ...saved.settings },
+    ui: { ...defaultData.ui, ...(saved.ui || {}) },
     exerciseLibraryUser: { ...structuredClone(defaultData.exerciseLibraryUser), ...(saved.exerciseLibraryUser || {}) },
     profile: {...structuredClone(defaultData.profile),...(saved.profile||{}),trainingBackground:{...defaultData.profile.trainingBackground,...(saved.profile?.trainingBackground||{})},onboardingStatus:{...defaultData.profile.onboardingStatus,...(saved.profile?.onboardingStatus||{})}}
   };
@@ -344,6 +363,10 @@ function renderHome() {
     <div class="stat"><strong>${completedSets}</strong><span>Total sets logged</span></div>
     <div class="stat"><strong>${prs}</strong><span>Exercise bests</span></div>`;
   if (typeof renderMesocycleToday === "function") renderMesocycleToday();
+  const todayAction = document.querySelector("#startWorkoutButton");
+  if (todayAction?.textContent.includes("Programs")) todayAction.textContent = todayAction.textContent.replace("Programs", "Build");
+  const todaySummary = document.querySelector("#todayWorkoutSummary");
+  if (todaySummary?.textContent.includes("Programs")) todaySummary.textContent = todaySummary.textContent.replace("Programs", "Build");
   renderTodayDashboard();
 }
 
@@ -526,10 +549,11 @@ function calculatePRs() {
   return Object.keys(best).length;
 }
 
-function programTemplateCard(template) {
+function programTemplateCard(template, surface = "home") {
   const card=document.createElement("article");card.className="workout-card program-template-card";
   card.innerHTML=`<div class="workout-card-top"><div><h3>${escapeHtml(template.name)}</h3><p>${escapeHtml(template.description)}</p><p class="small-note">${template.daysPerWeek} days per week • ${escapeHtml(template.focus)} • Approximately ${escapeHtml(template.duration)} per workout</p></div></div><div class="card-actions workout-card-actions horizontal-scroll-row"><button class="secondary-button compact preview-program">Preview</button><button class="primary-button compact build-program">Build Mesocycle</button></div>`;
   card.querySelector(".preview-program").onclick=event=>openProgramPreview(template,event.currentTarget);
+  if (surface === "library") card.querySelector(".build-program").textContent = "Use This Program";
   card.querySelector(".build-program").onclick=()=>buildProgramMesocycle(template);
   return card;
 }
@@ -606,19 +630,104 @@ function workoutCard(workout, quick = false) {
     </div>`;
   el.querySelector(".preview-card").onclick = event => openWorkoutPreview(workout, { trigger: event.currentTarget, selectable: quick, editable: !isPremadeWorkout(workout) });
   el.querySelector(".start-card").onclick = () => startWorkout(workout.id);
+  if (!quick) el.querySelector(".start-card").textContent = "Start Once";
   const select = el.querySelector(".select-card");
   if (select) select.onclick = () => { data.selectedWorkoutId = workout.id; saveData(); };
   const edit = el.querySelector(".edit-card");
   if (edit) edit.onclick = () => openWorkoutEditor(workout);
   const del = el.querySelector(".delete-card");
   if (del) del.onclick = () => deleteWorkout(workout.id);
+  if (!quick) {
+    const actions = el.querySelector(".workout-card-actions");
+    if (isPremadeWorkout(workout)) {
+      edit?.remove();
+      del?.remove();
+    }
+    const duplicate = document.createElement("button");
+    duplicate.className = "secondary-button compact";
+    duplicate.textContent = "Duplicate";
+    duplicate.onclick = () => duplicateWorkoutTemplate(workout);
+    const addToMeso = document.createElement("button");
+    addToMeso.className = "secondary-button compact";
+    addToMeso.textContent = "Add to Mesocycle";
+    addToMeso.onclick = () => addWorkoutToMesocycle(workout);
+    actions.append(duplicate, addToMeso);
+  }
   return el;
+}
+
+function duplicateWorkoutTemplate(workout) {
+  const copy = structuredClone(workout);
+  copy.id = crypto.randomUUID();
+  copy.name = `${workout.name} Copy`;
+  copy.exercises = copy.exercises.map(exercise => ({ ...exercise, id: crypto.randomUUID() }));
+  data.workouts.unshift(copy);
+  saveData();
+  setLibrarySection("workouts", { focus: false });
+}
+
+function addWorkoutToMesocycle(workout) {
+  if (typeof newMesocycle !== "function" || typeof openMesocycleBuilder !== "function") return;
+  const mesocycle = newMesocycle();
+  mesocycle.name = `${workout.name} Mesocycle`;
+  mesocycle.daysPerWeek = 1;
+  mesocycle.schedule = [{ id: crypto.randomUUID(), dayIndex: 1, order: 0, workout: { ...structuredClone(workout), id: crypto.randomUUID(), exercises: workout.exercises.map(exercise => ({ ...structuredClone(exercise), id: crypto.randomUUID() })) } }];
+  openMesocycleBuilder(mesocycle);
+}
+
+function libraryBrowseExerciseCard(exercise) {
+  const card = document.createElement("article");
+  card.className = "library-exercise-card compact-library-card";
+  const favorite = data.exerciseLibraryUser.favorites.includes(exercise.id);
+  const hasHistory = data.history.some(session => session.exercises?.some(item => item.libraryExerciseId === exercise.id || normalizedExerciseName(item.name) === normalizedExerciseName(exercise.name)));
+  card.innerHTML = `<div><h3>${escapeHtml(exercise.name)}</h3><p>${escapeHtml(exercise.primaryMuscle)} | ${(exercise.equipment || []).map(escapeHtml).join(", ")}</p></div><div class="exercise-actions"><button class="secondary-button compact library-favorite" aria-pressed="${favorite}" aria-label="${favorite ? "Remove" : "Add"} ${escapeHtml(exercise.name)} ${favorite ? "from" : "to"} favorites">${favorite ? "Favorite" : "Favorite"}</button><button class="secondary-button compact library-preview">Preview</button>${hasHistory ? '<button class="secondary-button compact library-history">View History</button>' : ""}</div>`;
+  card.querySelector(".library-favorite").onclick = () => toggleExerciseFavorite(exercise.id);
+  card.querySelector(".library-preview").onclick = event => openExercisePreview(exercise, event.currentTarget);
+  card.querySelector(".library-history")?.addEventListener("click", event => { if (typeof openActiveExerciseHistory === "function") openActiveExerciseHistory(exercise, event.currentTarget); });
+  return card;
 }
 
 function renderLibrary() {
   const list = document.querySelector("#workoutLibrary");
   list.innerHTML = "";
   data.workouts.forEach(w => list.appendChild(workoutCard(w)));
+  const programs = document.querySelector("#libraryProgramList");
+  programs.innerHTML = "";
+  PREMADE_PROGRAM_TEMPLATES.forEach(template => programs.appendChild(programTemplateCard(template, "library")));
+
+  const definitions = allExerciseDefinitions();
+  const favorites = definitions.filter(exercise => data.exerciseLibraryUser.favorites.includes(exercise.id));
+  const favoritesHolder = document.querySelector("#libraryFavorites");
+  favoritesHolder.innerHTML = "";
+  if (favorites.length) favorites.forEach(exercise => favoritesHolder.appendChild(libraryBrowseExerciseCard(exercise)));
+  else favoritesHolder.innerHTML = '<div class="panel"><p>No favorite exercises yet. Open the Exercise Library and mark exercises you want to keep here.</p></div>';
+
+  const recentIds = [...data.exerciseLibraryUser.recent];
+  data.history.forEach(session => session.exercises?.forEach(exercise => { if (exercise.libraryExerciseId && !recentIds.includes(exercise.libraryExerciseId)) recentIds.push(exercise.libraryExerciseId); }));
+  const recent = recentIds.map(id => definitions.find(exercise => exercise.id === id)).filter(Boolean).slice(0, 12);
+  const recentHolder = document.querySelector("#libraryRecent");
+  recentHolder.innerHTML = "";
+  if (recent.length) recent.forEach(exercise => recentHolder.appendChild(libraryBrowseExerciseCard(exercise)));
+  else recentHolder.innerHTML = '<div class="panel"><p>Recently completed or added exercises will appear here.</p></div>';
+
+  setLibrarySection(data.ui?.librarySection || "premade", { focus: false, persist: false });
+}
+
+function setLibrarySection(section, { focus = true, persist = true } = {}) {
+  const valid = ["premade", "workouts", "exercises", "favorites", "recent"];
+  const selected = valid.includes(section) ? section : "premade";
+  data.ui = { ...defaultData.ui, ...(data.ui || {}), librarySection: selected };
+  document.querySelectorAll(".library-section-tab").forEach(button => {
+    const active = button.dataset.librarySection === selected;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+  document.querySelectorAll(".library-section").forEach(panel => panel.classList.toggle("active", panel.dataset.libraryPanel === selected));
+  if (persist) localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  if (focus) {
+    const heading = document.querySelector(`.library-section[data-library-panel="${selected}"] h3`);
+    if (heading) { heading.tabIndex = -1; heading.focus({ preventScroll: true }); }
+  }
 }
 
 function openExerciseLibrary(context={type:"browse"}) {
@@ -665,6 +774,13 @@ function exerciseLibraryCard(exercise){
   card.innerHTML=`<h3>${escapeHtml(exercise.name)}</h3><p>${escapeHtml(exercise.primaryMuscle)} • ${(exercise.equipment||[]).map(escapeHtml).join(", ")} • ${escapeHtml(exercise.exerciseType)}</p><p class="small-note">Default: ${exercise.defaults.sets} sets • ${exercise.defaults.minReps}–${exercise.defaults.maxReps} reps • RIR ${exercise.defaults.targetRIR}</p><div class="exercise-actions"><button class="secondary-button favorite-button" aria-label="${favorite?"Remove":"Add"} ${escapeHtml(exercise.name)} ${favorite?"from":"to"} favorites" aria-pressed="${favorite}">${favorite?"★":"☆"}</button><button class="secondary-button preview-exercise-button">Preview</button>${exerciseLibraryContext.type!=="browse"?'<button class="primary-button compact add-library-exercise">Add</button>':""}${exercise.sourceType==="custom"?'<button class="danger-button compact delete-custom-exercise">Delete</button>':""}</div>`;
   card.querySelector(".favorite-button").onclick=()=>toggleExerciseFavorite(exercise.id);
   card.querySelector(".preview-exercise-button").onclick=event=>openExercisePreview(exercise,event.currentTarget);
+  if (exerciseLibraryContext.type === "browse" && data.history.some(session => session.exercises?.some(item => item.libraryExerciseId === exercise.id || normalizedExerciseName(item.name) === normalizedExerciseName(exercise.name)))) {
+    const historyButton = document.createElement("button");
+    historyButton.className = "secondary-button compact";
+    historyButton.textContent = "View History";
+    historyButton.onclick = event => { if (typeof openActiveExerciseHistory === "function") openActiveExerciseHistory(exercise, event.currentTarget); };
+    card.querySelector(".exercise-actions").appendChild(historyButton);
+  }
   card.querySelector(".add-library-exercise")?.addEventListener("click",()=>addExerciseFromLibrary(exercise));
   card.querySelector(".delete-custom-exercise")?.addEventListener("click",()=>deleteCustomExercise(exercise));
   return card;
@@ -708,6 +824,7 @@ function deleteCustomExercise(exercise){if(!confirm(`Delete custom exercise ${ex
 function renderHistory() {
   const list = document.querySelector("#historyList");
   list.innerHTML = "";
+  renderHistoryExerciseIndex();
   if (!data.history.length) {
     list.innerHTML = '<div class="panel"><p>No workouts logged yet. Finish your first session and it will appear here.</p></div>';
     return;
@@ -725,6 +842,28 @@ function renderHistory() {
       ${h.soreness?.ratings ? `<p class="small-note">Soreness: ${Object.entries(h.soreness.ratings).map(([muscle,rating]) => `${sorenessLabel(muscle)} — ${["Not sore","A little sore","I still feel it","I can barely move"][rating]}`).join(" • ")} • ${h.soreness.decision}</p>` : ""}
       ${h.exercises.some(e => Number(e.jointPain?.rating) > 1) ? `<p class="small-note">Joint pain: ${h.exercises.filter(e=>Number(e.jointPain?.rating)>1).map(e=>`${escapeHtml(e.name)} ${e.jointPain.rating}/5 (${(e.jointPain.joints||[]).map(escapeHtml).join(", ")})`).join(" • ")}</p>` : ""}`;
     list.appendChild(el);
+  });
+}
+
+function renderHistoryExerciseIndex() {
+  const holder = document.querySelector("#historyExerciseIndex");
+  if (!holder) return;
+  const seen = new Set();
+  const exercises = [];
+  data.history.forEach(session => session.exercises?.forEach(result => {
+    const key = result.libraryExerciseId || normalizedExerciseName(result.name);
+    if (seen.has(key)) return;
+    seen.add(key);
+    exercises.push(definitionForExercise(result) || result);
+  }));
+  holder.innerHTML = "";
+  if (!exercises.length) { holder.innerHTML = '<div class="panel"><p>Exercise history will appear after a workout is completed.</p></div>'; return; }
+  exercises.slice(0, 30).forEach(exercise => {
+    const button = document.createElement("button");
+    button.className = "secondary-button history-exercise-button";
+    button.textContent = exercise.name;
+    button.onclick = event => { if (typeof openActiveExerciseHistory === "function") openActiveExerciseHistory(exercise, event.currentTarget); };
+    holder.appendChild(button);
   });
 }
 
@@ -1200,10 +1339,19 @@ function applyMissingWeightRecommendations(exercises){let count=0;exercises.forE
 function standardRecalculationExercises(){return[...data.workouts.flatMap(workout=>workout.exercises),...data.mesocycles.drafts.flatMap(meso=>meso.schedule.flatMap(slot=>slot.workout.exercises))];}
 function activeMesocycleExercises(){return data.mesocycles?.active?.schedule?.flatMap(slot=>slot.workout.exercises)||[];}
 
-function activateAppView(viewId) {
+function canonicalViewId(viewId) {
+  return ({ home: "homeView", library: "builderView", programs: "builderView", build: "programsView", workouts: "programsView", history: "historyView", profile: "profileView" })[viewId] || viewId;
+}
+
+function activateAppView(requestedViewId, options = {}) {
+  const viewId = canonicalViewId(requestedViewId);
   document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
   document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
-  document.querySelectorAll(".dock-tab").forEach(button => button.classList.toggle("active", button.dataset.dockView === viewId));
+  document.querySelectorAll(".dock-tab").forEach(button => {
+    const active = button.dataset.dockView === viewId;
+    button.classList.toggle("active", active);
+    if (active) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
+  });
   const tab = document.querySelector(`.tab[data-view="${viewId}"]`);
   const view = document.querySelector(`#${viewId}`);
   if (!tab || !view) return;
@@ -1211,12 +1359,29 @@ function activateAppView(viewId) {
   view.classList.add("active");
   if (viewId === "homeView") renderHome();
   if (viewId === "programsView" && typeof renderPrograms === "function") renderPrograms();
-  tab.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  if (viewId === "builderView") {
+    renderLibrary();
+    if (options.librarySection) setLibrarySection(options.librarySection, { focus: false });
+  }
+  data.ui = { ...defaultData.ui, ...(data.ui || {}), activeView: viewId };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  if (options.scroll !== false) window.scrollTo({ top: 0, behavior: "smooth" });
+  if (options.focus !== false) {
+    const heading = view.querySelector("h2");
+    if (heading) { heading.tabIndex = -1; heading.focus({ preventScroll: true }); }
+  }
+}
+
+function restoreNavigationState() {
+  data.ui = migrateNavigationState(data.ui || {});
+  activateAppView(data.ui.activeView, { focus: false, scroll: false });
 }
 
 document.querySelectorAll(".tab").forEach(tab => tab.onclick = () => activateAppView(tab.dataset.view));
 document.querySelectorAll(".dock-tab").forEach(button => button.onclick = () => activateAppView(button.dataset.dockView));
+document.querySelectorAll(".library-section-tab").forEach(button => button.onclick = () => setLibrarySection(button.dataset.librarySection));
+document.querySelector("#buildFromPremadeButton").onclick = () => activateAppView("builderView", { librarySection: "premade" });
+document.querySelector("#buildCustomMesoButton").onclick = () => { if (typeof openMesocycleBuilder === "function") openMesocycleBuilder(); };
 
 document.querySelector("#startWorkoutButton").onclick = () => {
   if (data.selectedWorkoutId) startWorkout(data.selectedWorkoutId);

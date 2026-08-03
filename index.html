@@ -24,8 +24,8 @@
 
     <nav class="tabs" aria-label="Primary">
       <button class="tab active" data-view="homeView">Today</button>
-      <button class="tab" data-view="programsView">Programs</button>
-      <button class="tab" data-view="builderView">Workouts</button>
+      <button class="tab" data-view="builderView">Library</button>
+      <button class="tab" data-view="programsView">Build</button>
       <button class="tab" data-view="historyView">History</button>
       <button class="tab" data-view="profileView">Profile</button>
     </nav>
@@ -90,25 +90,59 @@
 
     <section id="programsView" class="view">
       <div class="section-heading">
-        <div><p class="eyebrow">TRAINING BLOCKS</p><h2>Programs</h2></div>
-        <button id="newMesocycleButton" class="primary-button compact">Create new</button>
+        <div><p class="eyebrow">MESOCYCLE MANAGEMENT</p><h2>Build</h2><p class="small-note">Create a training block or continue the one already in progress.</p></div>
+        <button id="newMesocycleButton" class="primary-button compact">Create New Mesocycle</button>
       </div>
+      <section class="build-choice-panel dashboard-panel" aria-labelledby="buildChoiceTitle">
+        <div class="dashboard-panel-heading"><h3 id="buildChoiceTitle">Start a new mesocycle</h3><span class="dashboard-corner-mark" aria-hidden="true"></span></div>
+        <div class="build-choice-grid">
+          <button id="buildFromPremadeButton" class="secondary-button"><span>Use a premade program</span><small>Choose a complete weekly program, then customize its schedule and length.</small></button>
+          <button id="buildCustomMesoButton" class="secondary-button"><span>Build a custom mesocycle</span><small>Create the training days and exercises yourself using the existing builder.</small></button>
+        </div>
+      </section>
+      <div class="section-heading"><h3>Active mesocycle</h3></div>
       <div id="activeMesocycle"></div>
       <div class="section-heading"><h3>Draft mesocycles</h3></div>
       <div id="draftMesocycles" class="card-list"></div>
-      <div class="section-heading"><h3>Completed mesocycles</h3></div>
-      <div id="completedMesocycles" class="card-list"></div>
     </section>
 
     <section id="builderView" class="view">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">PROGRAM LIBRARY</p>
-          <h2>Your workouts</h2>
+          <p class="eyebrow">BROWSE TRAINING CONTENT</p>
+          <h2>Library</h2>
+          <p class="small-note">Find programs, saved workouts, and individual exercises.</p>
         </div>
-        <div class="exercise-actions"><button id="openExerciseLibraryButton" class="secondary-button compact">Exercise Library</button><button id="newWorkoutButton" class="primary-button compact">New</button></div>
       </div>
-      <div id="workoutLibrary" class="card-list"></div>
+      <nav id="librarySectionTabs" class="library-section-tabs horizontal-scroll-row" aria-label="Library sections">
+        <button class="library-section-tab active" data-library-section="premade" aria-selected="true">Premade Programs</button>
+        <button class="library-section-tab" data-library-section="workouts" aria-selected="false">Saved Workouts</button>
+        <button class="library-section-tab" data-library-section="exercises" aria-selected="false">Exercise Library</button>
+        <button class="library-section-tab" data-library-section="favorites" aria-selected="false">Favorites</button>
+        <button class="library-section-tab" data-library-section="recent" aria-selected="false">Recently Used</button>
+      </nav>
+      <section class="library-section active" data-library-panel="premade" aria-labelledby="premadeProgramsTitle">
+        <div class="section-heading"><div><h3 id="premadeProgramsTitle">Premade Programs</h3><p class="small-note">Previewing a program does not create a mesocycle.</p></div></div>
+        <div id="libraryProgramList" class="card-list"></div>
+      </section>
+      <section class="library-section" data-library-panel="workouts" aria-labelledby="savedWorkoutsTitle">
+        <div class="section-heading"><div><h3 id="savedWorkoutsTitle">Saved Workouts</h3><p class="small-note">Start once, edit your own templates, or use one inside a mesocycle.</p></div><button id="newWorkoutButton" class="primary-button compact">New Workout</button></div>
+        <div id="workoutLibrary" class="card-list"></div>
+      </section>
+      <section class="library-section" data-library-panel="exercises" aria-labelledby="exerciseBrowseTitle">
+        <div class="library-callout dashboard-panel">
+          <div><p class="eyebrow">COMMERCIAL GYM</p><h3 id="exerciseBrowseTitle">Exercise Library</h3><p>Search by muscle, equipment, or movement type. Previewing here will not add an exercise to a workout.</p></div>
+          <button id="openExerciseLibraryButton" class="primary-button compact">Browse Exercises</button>
+        </div>
+      </section>
+      <section class="library-section" data-library-panel="favorites" aria-labelledby="favoritesTitle">
+        <div class="section-heading"><div><h3 id="favoritesTitle">Favorites</h3><p class="small-note">Favorite exercises are kept here. Program and workout favorites can be added later without changing this layout.</p></div></div>
+        <div id="libraryFavorites" class="card-list"></div>
+      </section>
+      <section class="library-section" data-library-panel="recent" aria-labelledby="recentlyUsedTitle">
+        <div class="section-heading"><div><h3 id="recentlyUsedTitle">Recently Used</h3><p class="small-note">Exercises used in completed workouts or added to a plan appear here.</p></div></div>
+        <div id="libraryRecent" class="card-list compact-library-list"></div>
+      </section>
       <dialog id="exerciseLibraryDialog" aria-labelledby="exerciseLibraryTitle"><div id="exerciseLibraryPanel" class="dialog-card exercise-library-panel">
         <div class="section-heading"><div><p class="eyebrow">COMMERCIAL GYM</p><h2 id="exerciseLibraryTitle">Exercise Library</h2></div><button id="closeExerciseLibraryButton" class="secondary-button compact">Close</button></div>
         <label for="exerciseLibrarySearch">Search exercises</label>
@@ -132,6 +166,10 @@
         </div>
       </div>
       <div id="historyList" class="card-list"></div>
+      <div class="section-heading"><div><h3>Exercise history</h3><p class="small-note">Open an exercise to review weights, repetitions, feedback, soreness, and joint-pain records.</p></div></div>
+      <div id="historyExerciseIndex" class="card-list compact-library-list"></div>
+      <div class="section-heading"><div><h3>Completed mesocycles</h3><p class="small-note">Finished and ended training blocks remain available for review.</p></div></div>
+      <div id="completedMesocycles" class="card-list"></div>
     </section>
 
     <section id="profileView" class="view">
@@ -345,8 +383,8 @@
 
   <nav class="mobile-dock" aria-label="Mobile navigation">
     <button class="dock-tab active" data-dock-view="homeView" type="button"><span aria-hidden="true">⌂</span><small>Home</small></button>
-    <button class="dock-tab" data-dock-view="programsView" type="button"><span aria-hidden="true">▤</span><small>Programs</small></button>
-    <button class="dock-tab dock-train" data-dock-view="builderView" type="button"><span aria-hidden="true">＋</span><small>Workouts</small></button>
+    <button class="dock-tab" data-dock-view="builderView" type="button"><span aria-hidden="true">▦</span><small>Library</small></button>
+    <button class="dock-tab dock-train" data-dock-view="programsView" type="button"><span aria-hidden="true">＋</span><small>Build</small></button>
     <button class="dock-tab" data-dock-view="historyView" type="button"><span aria-hidden="true">▥</span><small>History</small></button>
     <button class="dock-tab" data-dock-view="profileView" type="button"><span aria-hidden="true">◯</span><small>Profile</small></button>
   </nav>

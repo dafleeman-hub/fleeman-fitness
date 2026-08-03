@@ -235,7 +235,7 @@ function renderPrograms() {
 
 function savedWorkoutInProgress(){return typeof loadSavedActiveWorkout==="function"?loadSavedActiveWorkout():null;}
 
-function activeMesocycleMarkup(meso){const next=nextMesoSlot(meso),done=mesoDoneCount(meso),total=mesoTotalWorkouts(meso),pct=Math.min(100,Math.round(done/total*100));const pos=currentMesoPosition(meso),paused=savedWorkoutInProgress();
+function activeMesocycleMarkupBase(meso){const next=nextMesoSlot(meso),done=mesoDoneCount(meso),total=mesoTotalWorkouts(meso),pct=Math.min(100,Math.round(done/total*100));const pos=currentMesoPosition(meso),paused=savedWorkoutInProgress();
   if(!next)return `<div class="mesocycle-card"><p class="eyebrow">READY TO COMPLETE</p><h2>${escapeHtml(meso.name)}</h2><p>${done} of ${total} workouts resolved.</p><div class="progress-track"><div class="progress-fill" style="width:100%"></div></div><button id="completeMeso" class="primary-button">View summary and complete</button></div>`;
   const workoutHeading=paused?`Workout in progress: ${escapeHtml(paused.workoutName)}`:`Next: ${isDeloadWeek(meso,pos.week)?"Deload — ":""}${escapeHtml(next.plan.workout.name)}`;
   const mainAction=paused?'<button id="startNextMeso" class="primary-button">Resume workout</button>':meso.progress.needsWeekReview?weekReviewMarkup(meso,pos.week):'<button id="startNextMeso" class="primary-button">Start next workout</button>';
@@ -283,7 +283,42 @@ function renderMesocycleToday(){
   previewBtn.classList.remove("hidden");previewBtn.onclick=event=>previewScheduledMesoWorkout(meso,next.week,todaySlot,event.currentTarget);
 }
 
-document.querySelector("#newMesocycleButton").onclick=()=>openMesocycleBuilder();
+function activeMesocycleMarkup(meso) {
+  return activeMesocycleMarkupBase(meso)
+    .replace("Start next workout", "Continue mesocycle")
+    .replace("View full", "View schedule");
+}
+
+function renderMesoCollection(selector,items,type){
+  const el=document.querySelector(selector);
+  if(!el)return;
+  el.innerHTML=items.length?"":`<div class="panel"><p>No ${type} mesocycles.</p></div>`;
+  items.forEach(m=>{
+    const card=document.createElement("div");card.className="mesocycle-card";
+    const summary=m.summary?`<p>${m.summary.completed}/${m.summary.planned} workouts | ${m.summary.percentage}% | ${m.summary.sets} sets | ${m.summary.improved} exercises improved${m.summary.pain.length?` | Pain flags: ${m.summary.pain.map(escapeHtml).join(", ")}`:""}</p>`:"";
+    card.innerHTML=`<h3>${escapeHtml(m.name)}</h3><p>${m.totalWeeks} weeks | ${m.daysPerWeek} days/week</p>${summary}<div class="card-actions workout-card-actions horizontal-scroll-row"><button class="secondary-button preview">Preview</button><button class="secondary-button open">${type==="draft"?"Continue Editing":"View"}</button><button class="secondary-button duplicate">Duplicate</button>${type==="draft"?'<button class="primary-button start">Start Mesocycle</button><button class="danger-button delete">Delete</button>':""}</div>`;
+    card.querySelector(".preview").onclick=()=>openMesocyclePreview(m);
+    card.querySelector(".open").onclick=()=>openMesocycleBuilder(m);
+    card.querySelector(".duplicate").onclick=()=>duplicateMesocycle(m);
+    card.querySelector(".start")?.addEventListener("click",()=>activateMesocycle(m));
+    card.querySelector(".delete")?.addEventListener("click",()=>deleteMesocycleDraft(m));
+    el.appendChild(card);
+  });
+}
+
+function openMesocyclePreview(meso){
+  mesoBuilder=structuredClone(meso);mesoStep=4;
+  document.querySelector("#mesocycleDialogTitle").textContent="Preview mesocycle";
+  renderMesoBuilder();document.querySelector("#mesocycleDialog").showModal();
+}
+
+function deleteMesocycleDraft(meso){
+  if(!confirm(`Delete draft ${meso.name}? Workout history and other mesocycles will remain.`))return;
+  data.mesocycles.drafts=data.mesocycles.drafts.filter(item=>item.id!==meso.id);saveData();
+}
+
+document.querySelector("#newMesocycleButton").onclick=()=>{const choice=document.querySelector("#buildChoiceTitle");choice.tabIndex=-1;choice.scrollIntoView({behavior:"smooth",block:"center"});choice.focus({preventScroll:true});};
 document.querySelector("#closeMesocycleButton").onclick=()=>{if(confirm("Close the builder? Save as a draft first if you want to keep these changes."))document.querySelector("#mesocycleDialog").close();};
 ensureMesocycleData();
 renderAll();
+restoreNavigationState();
