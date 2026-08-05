@@ -1,6 +1,6 @@
 
 const STORAGE_KEY = "fleemanFitnessDataV1";
-const APP_VERSION = "1.0.0-beta";
+const APP_VERSION = "1.2.0-beta";
 let previewReturnFocus = null;
 let previewScrollPosition = 0;
 const defaultData = {
@@ -309,6 +309,7 @@ function renderOnboardingStep(){const profile=onboardingDraft;document.querySele
   if(onboardingStep===3){body.innerHTML=`<h3>Step 3 of 4: Primary training goal</h3><label>Primary goal<select id="primaryGoal">${["Build muscle","Gain strength","General fitness","Return to training","Maintain current muscle","Custom goal"].map(value=>onboardingOption(value,value,profile.primaryGoal)).join("")}</select></label><label>Custom goal (optional)<input id="customGoal" value="${escapeHtml(profile.customGoal||"")}"></label><p class="small-note">Fleeman Fitness will continue prioritizing hypertrophy programming in this version.</p>`;}
   if(onboardingStep===4){const unit=weightUnit(profile.units);body.innerHTML=`<h3>Step 4 of 4: Known movement baselines</h3><p class="small-note">Optional. Add only movements whose normal working weight you know. You can skip any or every movement.</p><div class="baseline-card onboarding-grid"><label>Movement category<select id="baselineMovement">${MOVEMENT_BASELINE_CATEGORIES.map(value=>`<option>${value}</option>`).join("")}</select></label><label>Exact exercise<select id="baselineExercise"><option value="">Movement baseline only</option>${COMMERCIAL_GYM_EXERCISES.map(exercise=>`<option value="${exercise.id}">${escapeHtml(exercise.name)}</option>`).join("")}</select></label><label>Weight-entry type<select id="baselineEntryType">${["Total Weight","Per Dumbbell","Machine Stack","Plate-Loaded Total","Plate-Loaded Per Side","Bodyweight","Bodyweight Plus Added Weight","Assisted Bodyweight"].map(value=>`<option>${value}</option>`).join("")}</select></label><label>Weight (${unit})<input id="baselineWeight" type="number" min="0" step="0.5"></label><label>Repetitions completed<input id="baselineReps" type="number" min="1" max="30" value="8"></label><label>Estimated reps remaining<input id="baselineRir" type="number" min="0" max="10" value="2"></label><label>Date<input id="baselineDate" type="date" value="${new Date().toISOString().slice(0,10)}"></label><div class="exercise-actions wide"><button id="addBaselineButton" class="secondary-button">Add strength baseline</button><button id="unknownBaselineButton" class="secondary-button">I do not know</button><button id="skipBaselineButton" class="secondary-button">Skip this movement</button></div></div><div id="onboardingBaselineList">${profile.strengthBaselines.length?profile.strengthBaselines.map(item=>`<p>${escapeHtml(item.exerciseName||item.movementCategory)}: ${displayWeightValue(item.weight,profile.units)} ${unit} × ${item.repetitions} reps • Estimated strength baseline ${displayWeightValue(item.estimatedOneRepMax,profile.units)} ${unit}</p>`).join(""):"<p>No baselines added. You can skip this step.</p>"}</div>`;document.querySelector("#addBaselineButton").onclick=addOnboardingBaseline;document.querySelector("#unknownBaselineButton").onclick=()=>{document.querySelector("#baselineWeight").value="";document.querySelector("#baselineWeight").focus();};document.querySelector("#skipBaselineButton").onclick=()=>{const movement=document.querySelector("#baselineMovement").value;profile.skippedBaselineCategories=[...new Set([...(profile.skippedBaselineCategories||[]),movement])];renderOnboardingStep();};document.querySelector("#baselineExercise").onchange=event=>{const definition=COMMERCIAL_GYM_EXERCISES.find(item=>item.id===event.target.value);if(!definition)return;document.querySelector("#baselineMovement").value=movementBaselineCategory(definition)||document.querySelector("#baselineMovement").value;document.querySelector("#baselineEntryType").value=definition.defaults.weightEntryType;};}
   if(onboardingStep===1)document.querySelector("#profileUnits").onchange=event=>{const nextUnits=event.target.value;event.target.value=profile.units;saveOnboardingStep();profile.units=nextUnits;renderOnboardingStep();};
+  if(onboardingStep===4){FormValidation.setKey(document.querySelector("#baselineWeight"),"baseline.weight");FormValidation.setKey(document.querySelector("#baselineReps"),"baseline.repetitions");FormValidation.setKey(document.querySelector("#baselineRir"),"baseline.repsRemaining");FormValidation.setKey(document.querySelector("#baselineDate"),"baseline.date");FormValidation.bindLiveClear(document.querySelector("#onboardingDialog"),{isCorrected:isBaselineFieldCorrected});}
   body.querySelector("input,select,button")?.focus();
 }
 
@@ -316,7 +317,8 @@ function saveOnboardingStep(){const profile=onboardingDraft;if(onboardingStep===
   if(onboardingStep===2){for(const key of ["barbell","dumbbell","machines","structuredPrograms"])profile.trainingBackground[key]=document.querySelector(`#background-${key}`).value;profile.trainingBackground.comfortableWithRIR=document.querySelector("#comfortableRir").value==="yes";profile.trainingBackground.knownWorkingWeights=document.querySelector("#knownWorkingWeights").value;profile.currentTrainingDays=Number(document.querySelector("#currentDays").value)||null;profile.preferredTrainingDays=Number(document.querySelector("#preferredDays").value)||null;}
   if(onboardingStep===3){profile.primaryGoal=document.querySelector("#primaryGoal").value;profile.customGoal=document.querySelector("#customGoal").value.trim();}}
 
-function addOnboardingBaseline(){const weightEntered=Number(document.querySelector("#baselineWeight").value);if(!weightEntered)return alert("Enter the weight used, choose I do not know, or skip this movement.");const exerciseId=document.querySelector("#baselineExercise").value;const definition=COMMERCIAL_GYM_EXERCISES.find(item=>item.id===exerciseId);const weight=internalWeightValue(weightEntered,onboardingDraft.units);const repetitions=Number(document.querySelector("#baselineReps").value),repsRemaining=Number(document.querySelector("#baselineRir").value);if(!repetitions||repsRemaining<0)return alert("Enter completed repetitions and your estimated repetitions remaining.");onboardingDraft.strengthBaselines.push({id:crypto.randomUUID(),movementCategory:document.querySelector("#baselineMovement").value,exerciseId:exerciseId||null,exerciseName:definition?.name||"",weight:Math.round(weight*10)/10,repetitions,repsRemaining,weightEntryType:document.querySelector("#baselineEntryType").value,date:document.querySelector("#baselineDate").value,estimatedOneRepMax:estimatedOneRepMax(weight,repetitions,repsRemaining)});renderOnboardingStep();}
+function isBaselineFieldCorrected(field){if(field.matches("input,select,textarea")&&!field.checkValidity())return false;if(field.dataset.validationKey==="baseline.weight")return Number(field.value)>0;return field.value!=="";}
+function addOnboardingBaseline(){const result=FormValidation.createResult();const weightField=document.querySelector("#baselineWeight"),repsField=document.querySelector("#baselineReps"),rirField=document.querySelector("#baselineRir"),dateField=document.querySelector("#baselineDate");FormValidation.number(result,"baseline.weight",weightField.value,{label:"Weight",min:.1,minMessage:"Enter the weight used, choose I do not know, or skip this movement."});FormValidation.number(result,"baseline.repetitions",repsField.value,{label:"Repetitions completed",min:1,max:30,integer:true});FormValidation.number(result,"baseline.repsRemaining",rirField.value,{label:"Estimated reps remaining",min:0,max:10,integer:true});FormValidation.required(result,"baseline.date",dateField.value,"Choose the date for this baseline.");if(!FormValidation.apply(document.querySelector("#onboardingBody"),result,{summaryTitle:"The strength baseline could not be added. Fix these fields:"}))return;const weightEntered=Number(weightField.value);const exerciseId=document.querySelector("#baselineExercise").value;const definition=COMMERCIAL_GYM_EXERCISES.find(item=>item.id===exerciseId);const weight=internalWeightValue(weightEntered,onboardingDraft.units);const repetitions=Number(repsField.value),repsRemaining=Number(rirField.value);onboardingDraft.strengthBaselines.push({id:crypto.randomUUID(),movementCategory:document.querySelector("#baselineMovement").value,exerciseId:exerciseId||null,exerciseName:definition?.name||"",weight:Math.round(weight*10)/10,repetitions,repsRemaining,weightEntryType:document.querySelector("#baselineEntryType").value,date:dateField.value,estimatedOneRepMax:estimatedOneRepMax(weight,repetitions,repsRemaining)});renderOnboardingStep();}
 function finishOnboarding(){saveOnboardingStep();const now=new Date().toISOString();onboardingDraft.onboardingStatus={completed:true,dismissedUntil:null,currentStep:4,declined:false};onboardingDraft.createdAt=onboardingDraft.createdAt||now;onboardingDraft.updatedAt=now;data.profile=structuredClone(onboardingDraft);document.querySelector("#onboardingDialog").close();saveData();}
 function dismissOnboarding(){
   if(data.profile.onboardingStatus?.completed){document.querySelector("#onboardingDialog").close();renderAll();return;}
@@ -501,12 +503,29 @@ function renderTodayDashboard() {
 
   const activeMeso = data.mesocycles?.active;
   document.querySelector("#todayMesoMeta").textContent = activeMeso && context
-    ? `${activeMeso.name} | WEEK ${context.week || 1}`
+    ? activeMeso.scheduleType === "rolling" ? `${activeMeso.name} | ROLLING CYCLE | CYCLE ${context.cycle || context.week || 1}` : `${activeMeso.name} | WEEK ${context.week || 1}`
     : paused ? "SAVED SESSION" : workout ? "SAVED WORKOUT" : "TRAINING DASHBOARD";
 
   const weekStrip = document.querySelector("#todayWeekStrip");
   const weekSummary = document.querySelector("#weekDashboardSummary");
   if (activeMeso && typeof currentMesoPosition === "function") {
+    if (activeMeso.scheduleType === "rolling") {
+      const position = currentMesoPosition(activeMeso);
+      const cycle = context?.cycle || position.cycle || position.week || 1;
+      const completed = activeMeso.progress.completed.filter(item => Number(item.cycle ?? item.week) === cycle).length;
+      const skipped = activeMeso.progress.skipped.filter(item => Number(item.cycle ?? item.week) === cycle).length;
+      const rested = (activeMeso.progress.restCompleted || []).filter(item => Number(item.cycle ?? item.week) === cycle).length;
+      weekSummary.textContent = `${completed} workouts completed${skipped ? ` | ${skipped} skipped` : ""} | ${rested} rest days | Cycle ${cycle}`;
+      weekStrip.innerHTML = activeMeso.schedule.map((slot, index) => {
+        const done = activeMeso.progress.completed.some(item => Number(item.cycle ?? item.week) === cycle && item.slot === index) || (activeMeso.progress.restCompleted || []).some(item => Number(item.cycle ?? item.week) === cycle && item.slot === index);
+        const missed = activeMeso.progress.skipped.some(item => Number(item.cycle ?? item.week) === cycle && item.slot === index);
+        const current = position.slot === index && !done && !missed;
+        const status = done ? "DONE" : missed ? "SKIP" : current ? "NOW" : slot.dayType === "rest" ? "REST" : "NEXT";
+        const state = done ? "completed" : missed ? "skipped" : current ? "current" : "planned";
+        const title = slot.dayType === "rest" ? slot.restTitle || "Rest Day" : slot.workout?.name || `Day ${index + 1}`;
+        return `<div class="week-day ${state}" aria-label="Cycle Day ${index + 1}: ${escapeHtml(title)}, ${state}"><span>DAY</span><strong>${index + 1}</strong><i aria-hidden="true">${status}</i></div>`;
+      }).join("");
+    } else {
     const week = context?.week || currentMesoPosition(activeMeso).week;
     const completed = activeMeso.progress.completed.filter(item => item.week === week).length;
     const skipped = activeMeso.progress.skipped.filter(item => item.week === week).length;
@@ -519,6 +538,7 @@ function renderTodayDashboard() {
       const state = done ? "completed" : missed ? "skipped" : current ? "current" : "planned";
       return `<div class="week-day ${state}" aria-label="${escapeHtml(mesoWeekdays[slot.dayIndex])}: ${escapeHtml(slot.workout.name)}, ${state}"><span>${escapeHtml(mesoWeekdays[slot.dayIndex].slice(0,3).toUpperCase())}</span><strong>${index + 1}</strong><i aria-hidden="true">${status}</i></div>`;
     }).join("");
+    }
   } else {
     weekSummary.textContent = "Create a mesocycle to plan the week";
     weekStrip.innerHTML = ["MON","TUE","WED","THU","FRI","SAT","SUN"].map(day => `<div class="week-day empty"><span>${day}</span><strong>-</strong><i aria-hidden="true">OPEN</i></div>`).join("");
@@ -580,7 +600,7 @@ function templateExercisePrescription(item) {
 }
 
 function mesocycleFromProgramTemplate(template) {
-  return {id:crypto.randomUUID(),name:template.name,startDate:new Date().toISOString().slice(0,10),trainingWeeks:4,includeDeload:false,totalWeeks:4,daysPerWeek:template.daysPerWeek,status:"draft",createdAt:new Date().toISOString(),sourceTemplateId:template.id,sourceTemplateVersion:PROGRAM_TEMPLATE_VERSION,progress:{week:1,slot:0,completed:[],skipped:[],needsWeekReview:false},schedule:template.schedule.map((day,index)=>({id:crypto.randomUUID(),dayIndex:day.dayIndex,order:index,focusMuscle:day.workout.focus,workout:{id:crypto.randomUUID(),name:day.workout.name,notes:day.workout.focus,exercises:day.workout.exercises.map(templateExercisePrescription).filter(Boolean)}}))};
+  return {id:crypto.randomUUID(),name:template.name,scheduleType:"weekly",startDate:new Date().toISOString().slice(0,10),trainingWeeks:4,includeDeload:false,totalWeeks:4,daysPerWeek:template.daysPerWeek,status:"draft",createdAt:new Date().toISOString(),sourceTemplateId:template.id,sourceTemplateVersion:PROGRAM_TEMPLATE_VERSION,progress:{week:1,slot:0,completed:[],skipped:[],needsWeekReview:false},schedule:template.schedule.map((day,index)=>({id:crypto.randomUUID(),dayIndex:day.dayIndex,order:index,focusMuscle:day.workout.focus,workout:{id:crypto.randomUUID(),name:day.workout.name,notes:day.workout.focus,exercises:day.workout.exercises.map(templateExercisePrescription).filter(Boolean)}}))};
 }
 
 function programWeeklySets(template) {
@@ -830,7 +850,12 @@ function renderHistory() {
     return;
   }
   data.history.forEach(h => {
-    const sets = h.exercises.reduce((s, e) => s + e.sets.filter(x => x.done).length, 0);
+    const exercises = h.exercises || [];
+    const sets = exercises.reduce((s, e) => s + (e.sets || []).filter(x => x.done).length, 0);
+    const rollingContext = h.mesocycle?.scheduleType === "rolling"
+      ? `<p class="small-note"><strong>Rolling Cycle</strong> • Cycle ${h.mesocycle.cycle || h.mesocycle.week} • Day ${h.mesocycle.cycleDay || Number(h.mesocycle.slot) + 1} of ${h.mesocycle.cycleLength} • ${h.mesocycle.phase === "deload" ? "Deload" : "Normal"}</p>`
+      : h.mesocycle ? `<p class="small-note"><strong>Weekly Schedule</strong> • Week ${h.mesocycle.week}</p>` : "";
+    const statusText = h.type === "rest-day" ? `Planned rest day • ${escapeHtml(h.scheduleStatus || "completed")}` : h.type === "extra-rest-day" ? "Extra rest day • Original cycle numbering unchanged" : h.type === "skipped-workout" ? `Skipped workout${h.skipReason ? ` • ${escapeHtml(h.skipReason)}` : ""}` : "";
     const el = document.createElement("article");
     el.className = "history-card";
     el.innerHTML = `
@@ -838,9 +863,10 @@ function renderHistory() {
         <div><h3>${escapeHtml(h.workoutName)}</h3><p>${new Date(h.date).toLocaleString()}</p></div>
         <strong>${sets} sets</strong>
       </div>
-      <p>${h.exercises.map(e => `${escapeHtml(e.name)}: ${displayWeightValue(e.weight,data.profile?.units)} ${weightUnit(data.profile?.units)}`).join(" • ")}</p>
+      ${rollingContext}
+      ${statusText ? `<p>${statusText}</p>` : `<p>${exercises.map(e => `${escapeHtml(e.name)}: ${displayWeightValue(e.weight,data.profile?.units)} ${weightUnit(data.profile?.units)}`).join(" • ")}</p>`}
       ${h.soreness?.ratings ? `<p class="small-note">Soreness: ${Object.entries(h.soreness.ratings).map(([muscle,rating]) => `${sorenessLabel(muscle)} — ${["Not sore","A little sore","I still feel it","I can barely move"][rating]}`).join(" • ")} • ${h.soreness.decision}</p>` : ""}
-      ${h.exercises.some(e => Number(e.jointPain?.rating) > 1) ? `<p class="small-note">Joint pain: ${h.exercises.filter(e=>Number(e.jointPain?.rating)>1).map(e=>`${escapeHtml(e.name)} ${e.jointPain.rating}/5 (${(e.jointPain.joints||[]).map(escapeHtml).join(", ")})`).join(" • ")}</p>` : ""}`;
+      ${exercises.some(e => Number(e.jointPain?.rating) > 1) ? `<p class="small-note">Joint pain: ${exercises.filter(e=>Number(e.jointPain?.rating)>1).map(e=>`${escapeHtml(e.name)} ${e.jointPain.rating}/5 (${(e.jointPain.joints||[]).map(escapeHtml).join(", ")})`).join(" • ")}</p>` : ""}`;
     list.appendChild(el);
   });
 }
@@ -873,6 +899,8 @@ function openWorkoutEditor(workout = null) {
   document.querySelector("#workoutNameInput").value = workout?.name || "";
   document.querySelector("#workoutNotesInput").value = workout?.notes || "";
   const editor = document.querySelector("#exerciseEditor");
+  FormValidation.clearAll(document.querySelector("#workoutForm"));
+  FormValidation.bindLiveClear(document.querySelector("#workoutForm"), { isCorrected: isWorkoutEditorFieldCorrected });
   editor.innerHTML = "";
   (workout?.exercises || [{name:"", sets:3, minReps:8, maxReps:12, startWeight:0}]).forEach(addExerciseEditor);
   document.querySelector("#workoutDialog").showModal();
@@ -900,6 +928,60 @@ function addExerciseEditor(exercise = {}) {
   card.querySelector(".exercise-weight-label").textContent = `${weightEntryLabel(exercise.weightEntryType||"Total Weight")} (${weightUnit(data.profile?.units)})`;
   card.querySelector(".remove-exercise").onclick = () => card.remove();
   document.querySelector("#exerciseEditor").appendChild(node);
+  FormValidation.clearKey(document.querySelector("#workoutForm"), "exercises");
+}
+
+function assignWorkoutValidationKeys() {
+  const form = document.querySelector("#workoutForm");
+  FormValidation.setKey(document.querySelector("#workoutNameInput"), "workoutName");
+  FormValidation.setKey(document.querySelector("#exerciseEditor"), "exercises");
+  [...form.querySelectorAll(".exercise-editor-card")].forEach((card, index) => {
+    const prefix = `exercises.${index}`;
+    FormValidation.setKey(card.querySelector(".exercise-name"), `${prefix}.name`);
+    FormValidation.setKey(card.querySelector(".exercise-sets"), `${prefix}.sets`);
+    FormValidation.setKey(card.querySelector(".exercise-min-reps"), `${prefix}.minReps`, [`${prefix}.maxReps`]);
+    FormValidation.setKey(card.querySelector(".exercise-max-reps"), `${prefix}.maxReps`);
+    FormValidation.setKey(card.querySelector(".exercise-weight"), `${prefix}.startWeight`);
+    FormValidation.setKey(card.querySelector(".exercise-target-rir"), `${prefix}.targetRir`);
+    FormValidation.setKey(card.querySelector(".exercise-rest"), `${prefix}.rest`);
+    FormValidation.setKey(card.querySelector(".exercise-increment"), `${prefix}.increment`);
+  });
+}
+
+function isWorkoutEditorFieldCorrected(field) {
+  if (field.matches("input, select, textarea") && !field.checkValidity()) return false;
+  if (field.classList.contains("exercise-name") || field.id === "workoutNameInput") return Boolean(field.value.trim());
+  if (field.classList.contains("exercise-max-reps")) {
+    const card = field.closest(".exercise-editor-card");
+    return Number(field.value) >= Number(card.querySelector(".exercise-min-reps").value);
+  }
+  return field.value !== "";
+}
+
+function validateWorkoutEditor() {
+  assignWorkoutValidationKeys();
+  const result = FormValidation.createResult();
+  const cards = [...document.querySelectorAll("#exerciseEditor .exercise-editor-card")];
+  FormValidation.required(result, "workoutName", document.querySelector("#workoutNameInput").value, "Enter a workout name.");
+  FormValidation.collection(result, "exercises", cards, { message: "Add at least one exercise." });
+  cards.forEach((card, index) => {
+    const prefix = `exercises.${index}`;
+    const exerciseNumber = index + 1;
+    const name = card.querySelector(".exercise-name").value;
+    const minReps = card.querySelector(".exercise-min-reps").value;
+    const maxReps = card.querySelector(".exercise-max-reps").value;
+    FormValidation.required(result, `${prefix}.name`, name, "Enter an exercise name.");
+    if (!name.trim()) result.summary.find(item => item.field === `${prefix}.name`).message = `Exercise ${exerciseNumber} needs a name.`;
+    FormValidation.number(result, `${prefix}.sets`, card.querySelector(".exercise-sets").value, { label: "Sets", min: 1, max: 10, integer: true });
+    FormValidation.number(result, `${prefix}.minReps`, minReps, { label: "Minimum reps", min: 1, max: 50, integer: true });
+    FormValidation.number(result, `${prefix}.maxReps`, maxReps, { label: "Maximum reps", min: 1, max: 50, integer: true });
+    if (minReps !== "" && maxReps !== "") FormValidation.related(result, `${prefix}.maxReps`, Number(maxReps) >= Number(minReps), "Maximum reps must be greater than or equal to minimum reps.");
+    FormValidation.number(result, `${prefix}.startWeight`, card.querySelector(".exercise-weight").value, { label: "Starting weight", min: 0 });
+    FormValidation.number(result, `${prefix}.targetRir`, card.querySelector(".exercise-target-rir").value, { label: "Target RIR", min: 0, max: 10, integer: true });
+    FormValidation.number(result, `${prefix}.rest`, card.querySelector(".exercise-rest").value, { label: "Rest seconds", min: 0, integer: true });
+    FormValidation.number(result, `${prefix}.increment`, card.querySelector(".exercise-increment").value, { label: "Weight increase", min: 0 });
+  });
+  return result;
 }
 
 function deleteWorkout(id) {
@@ -1088,6 +1170,17 @@ function updateRecoveryRecommendation() {
   panel.innerHTML = `<h3>${pendingSorenessPlan.hasAdjustment ? "Review adjusted workout" : "Continue as planned"}</h3>${notes.join("") || "<p>No soreness adjustments are recommended.</p>"}`;
 }
 
+function validateSorenessCheckIn() {
+  const result = FormValidation.createResult();
+  const workout = data.workouts.find(item => item.id === pendingWorkoutId);
+  workoutMuscles(workout).forEach(muscle => {
+    if (sorenessAnswers[muscle] == null) FormValidation.addError(result, `soreness.${muscle}`, `Choose a soreness rating for ${sorenessLabel(muscle)}.`);
+  });
+  return FormValidation.apply(document.querySelector("#recoveryDialog .dialog-card"), result, {
+    summaryTitle: "Complete the soreness check-in before starting:"
+  });
+}
+
 function previewAdjustedWorkout(trigger) {
   if (!pendingWorkoutId || !pendingSorenessPlan) return;
   const original = data.workouts.find(workout => workout.id === pendingWorkoutId);
@@ -1102,7 +1195,7 @@ function previewAdjustedWorkout(trigger) {
     originalWorkout: original,
     adjustmentReason: "Adjusted from today's completed muscle-soreness check-in.",
     startAction: () => {
-      const soreness = { ratings: structuredClone(sorenessAnswers), changes: structuredClone(pendingSorenessPlan.changes), decision: "accepted", date: new Date().toISOString(), week: workoutContext?.week, workoutName: original.name };
+      const soreness = { ratings: structuredClone(sorenessAnswers), changes: structuredClone(pendingSorenessPlan.changes), decision: "accepted", date: new Date().toISOString(), week: workoutContext?.week, cycle: workoutContext?.cycle, cycleDay: workoutContext?.cycleDay, scheduleType: workoutContext?.scheduleType, workoutName: original.name };
       document.querySelector("#recoveryDialog").close();
       pendingWorkoutId = null; pendingWorkoutContext = null; pendingSorenessPlan = null;
       beginWorkout(workoutId, soreness, workoutContext, "adjusted");
@@ -1113,18 +1206,22 @@ function previewAdjustedWorkout(trigger) {
 function startWorkout(id, context = null) {
   const workout = data.workouts.find(item => item.id === id);
   if (!workout) return;
-  if (!context || Number(context.week) < 2) {
+  const recoveryPeriod = context?.scheduleType === "rolling" ? Number(context.cycle) : Number(context?.week);
+  if (!context || recoveryPeriod < 2) {
     beginWorkout(id, null, context, "original");
     return;
   }
   pendingWorkoutId = id; pendingWorkoutContext = context; sorenessAnswers = {}; pendingSorenessPlan = null;
+  FormValidation.clearAll(document.querySelector("#recoveryDialog .dialog-card"));
   const grid = document.querySelector("#sorenessGrid");
   grid.innerHTML = "";
   workoutMuscles(workout).forEach(muscle => {
     const control = document.createElement("section"); control.className = "soreness-control";
+    FormValidation.setKey(control, `soreness.${muscle}`);
     control.innerHTML = `<strong>${sorenessLabel(muscle)} soreness</strong><div class="soreness-options">${["Not sore", "A little sore", "I still feel it", "I can barely move"].map((label,index)=>`<button class="soreness-option" data-rating="${index}">${label}</button>`).join("")}</div>`;
     control.querySelectorAll(".soreness-option").forEach(button => button.onclick = () => {
       sorenessAnswers[muscle] = Number(button.dataset.rating);
+      FormValidation.clearKey(document.querySelector("#recoveryDialog .dialog-card"), `soreness.${muscle}`);
       control.querySelectorAll(".soreness-option").forEach(option => option.classList.toggle("active", option === button));
       updateRecoveryRecommendation();
     });
@@ -1440,7 +1537,7 @@ document.querySelector("#startRecommendedButton").onclick = () => {
   if (!pendingSorenessPlan || !pendingWorkoutId) return;
   const workoutId = pendingWorkoutId;
   const workoutContext = pendingWorkoutContext;
-  const soreness = { ratings: structuredClone(sorenessAnswers), changes: structuredClone(pendingSorenessPlan.changes), decision: "accepted", date: new Date().toISOString(), week: workoutContext?.week, workoutName: data.workouts.find(w=>w.id===workoutId)?.name };
+  const soreness = { ratings: structuredClone(sorenessAnswers), changes: structuredClone(pendingSorenessPlan.changes), decision: "accepted", date: new Date().toISOString(), week: workoutContext?.week, cycle: workoutContext?.cycle, cycleDay: workoutContext?.cycleDay, scheduleType: workoutContext?.scheduleType, workoutName: data.workouts.find(w=>w.id===workoutId)?.name };
   document.querySelector("#recoveryDialog").close();
   pendingWorkoutId = null;
   recommendedWorkoutId = null;
@@ -1450,7 +1547,7 @@ document.querySelector("#startRecommendedButton").onclick = () => {
 document.querySelector("#skipSoreMusclesButton").onclick = () => {
   if (!pendingSorenessPlan || !pendingWorkoutId) return;
   const workoutId = pendingWorkoutId, workoutContext = pendingWorkoutContext;
-  const soreness = { ratings: structuredClone(sorenessAnswers), changes: structuredClone(pendingSorenessPlan.changes), decision: "skipped high-soreness muscles", date: new Date().toISOString(), week: workoutContext?.week, workoutName: data.workouts.find(w=>w.id===workoutId)?.name };
+  const soreness = { ratings: structuredClone(sorenessAnswers), changes: structuredClone(pendingSorenessPlan.changes), decision: "skipped high-soreness muscles", date: new Date().toISOString(), week: workoutContext?.week, cycle: workoutContext?.cycle, cycleDay: workoutContext?.cycleDay, scheduleType: workoutContext?.scheduleType, workoutName: data.workouts.find(w=>w.id===workoutId)?.name };
   document.querySelector("#recoveryDialog").close(); pendingWorkoutId=null; pendingWorkoutContext=null; pendingSorenessPlan=null;
   beginWorkout(workoutId, soreness, workoutContext, "skip-high");
 };
@@ -1458,8 +1555,8 @@ document.querySelector("#startOriginalButton").onclick = () => {
   if (!pendingWorkoutId) return;
   const workoutId = pendingWorkoutId;
   const workoutContext = pendingWorkoutContext;
-  if (workoutMuscles(data.workouts.find(w=>w.id===workoutId)).some(m=>sorenessAnswers[m]==null)) return alert("Rate each trained muscle before continuing.");
-  const soreness = { ratings: structuredClone(sorenessAnswers), changes: structuredClone(pendingSorenessPlan?.changes || []), decision: "ignored", date: new Date().toISOString(), week: workoutContext?.week, workoutName: data.workouts.find(w=>w.id===workoutId)?.name };
+  if (!validateSorenessCheckIn()) return;
+  const soreness = { ratings: structuredClone(sorenessAnswers), changes: structuredClone(pendingSorenessPlan?.changes || []), decision: "ignored", date: new Date().toISOString(), week: workoutContext?.week, cycle: workoutContext?.cycle, cycleDay: workoutContext?.cycleDay, scheduleType: workoutContext?.scheduleType, workoutName: data.workouts.find(w=>w.id===workoutId)?.name };
   document.querySelector("#recoveryDialog").close();
   pendingWorkoutId = null;
   recommendedWorkoutId = null;
@@ -1478,6 +1575,10 @@ document.querySelector("#finishWorkoutButton").onclick = finishWorkout;
 
 document.querySelector("#workoutForm").onsubmit = event => {
   event.preventDefault();
+  const validation = validateWorkoutEditor();
+  if (!FormValidation.apply(document.querySelector("#workoutForm"), validation, {
+    summaryTitle: "The workout could not be saved. Fix these fields:"
+  })) return;
   const cards = [...document.querySelectorAll("#exerciseEditor .exercise-editor-card")];
   const exercises = cards.map(card => ({
     ...JSON.parse(card.dataset.exerciseMetadata || "{}"),
@@ -1491,9 +1592,7 @@ document.querySelector("#workoutForm").onsubmit = event => {
     targetRir: Number(card.querySelector(".exercise-target-rir").value),
     rest: Number(card.querySelector(".exercise-rest").value),
     increment: Number(card.querySelector(".exercise-increment").value)
-  })).filter(e => e.name);
-
-  if (!exercises.length) return alert("Add at least one exercise.");
+  }));
   const id = document.querySelector("#editingWorkoutId").value || crypto.randomUUID();
   const workout = {
     id,

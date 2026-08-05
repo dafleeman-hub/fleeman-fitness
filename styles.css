@@ -179,8 +179,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .file-button input { display: none; }
 .icon-button {
   border: 0;
-  width: 38px;
-  height: 38px;
+  flex: 0 0 44px;
+  min-width: 44px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: var(--panel-2);
   color: var(--text);
@@ -721,6 +723,119 @@ input, select, textarea {
   min-height: 46px;
 }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+
+.validation-summary {
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  border: 1px solid rgba(239, 68, 68, .72);
+  border-left: 4px solid var(--danger);
+  border-radius: 10px;
+  background: rgba(127, 29, 29, .2);
+  color: #fecaca;
+}
+.validation-summary h3 {
+  margin: 0 0 8px;
+  color: #fff;
+  font-size: 1rem;
+}
+.validation-summary ul { margin: 0; padding-left: 20px; }
+.validation-summary li + li { margin-top: 4px; }
+.field-invalid {
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, .24) !important;
+}
+.field-invalid:focus {
+  border-color: #fca5a5 !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, .32) !important;
+}
+.field-error {
+  display: block;
+  width: 100%;
+  margin: 6px 0 0;
+  color: #fca5a5;
+  font-size: .82rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.validation-invalid.exercise-editor-card,
+.validation-invalid.exercise-meso-card,
+.validation-invalid.day-builder,
+.validation-invalid.meso-workout-card {
+  border-color: rgba(239, 68, 68, .58);
+}
+.soreness-control.field-invalid {
+  border: 1px solid rgba(239, 68, 68, .72) !important;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.schedule-type-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+.schedule-type-card {
+  min-height: 170px;
+  padding: 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--panel-2);
+  color: var(--text);
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 10px;
+}
+.schedule-type-card strong { color: var(--accent-2); font-size: 1.15rem; }
+.schedule-type-card span { line-height: 1.45; }
+.schedule-type-card small { color: var(--muted); line-height: 1.4; }
+.schedule-type-card:hover,
+.schedule-type-card.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent), 0 0 24px rgba(255, 90, 10, .12);
+}
+.schedule-type-grid.field-invalid {
+  border: 1px solid var(--danger) !important;
+  border-radius: 14px;
+  padding: 8px;
+}
+.cycle-day-list {
+  display: grid;
+  gap: 14px;
+}
+.cycle-day-card {
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--panel-2);
+  padding: 16px;
+}
+.schedule-type-badge {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 90, 10, .45);
+  border-radius: 999px;
+  color: var(--accent-2);
+  padding: 5px 9px;
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.summary-stat span { display: block; margin-top: 5px; }
+.rolling-preview-days details summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+}
+
+@media (max-width: 560px) {
+  .schedule-type-grid { grid-template-columns: 1fr; }
+  .schedule-type-card { min-height: 145px; }
+  .rolling-preview-days details summary { align-items: flex-start; flex-direction: column; }
+}
 .icon-button { border-radius: 4px; background: #29323d; }
 dialog { width: min(920px, 100%); }
 .dialog-card { background: #080c11; }

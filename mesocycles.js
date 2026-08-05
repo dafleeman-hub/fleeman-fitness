@@ -57,6 +57,8 @@ function openMesocycleBuilder(mesocycle = null) {
   mesoBuilder = structuredClone(mesocycle || newMesocycle());
   mesoStep = 1;
   document.querySelector("#mesocycleDialogTitle").textContent = mesocycle?.sourceTemplateId ? "Build mesocycle" : mesocycle ? "Edit mesocycle" : "Create mesocycle";
+  FormValidation.clearAll(document.querySelector("#mesocycleDialog"));
+  FormValidation.bindLiveClear(document.querySelector("#mesocycleDialog"), { isCorrected: isMesoFieldCorrected });
   renderMesoBuilder();
   document.querySelector("#mesocycleDialog").showModal();
 }
@@ -69,13 +71,14 @@ function renderMesoBuilder() {
   if (mesoStep === 2) renderMesoSchedule(body);
   if (mesoStep === 3) renderMesoWorkouts(body);
   if (mesoStep === 4) renderMesoReview(body);
+  assignMesoValidationKeys(mesoStep);
   const actions = document.querySelector("#mesocycleBuilderActions");
   actions.innerHTML = `${mesoStep > 1 ? '<button class="secondary-button" id="mesoBack">Back</button>' : ""}
     ${mesoStep < 4 ? '<button class="primary-button" id="mesoContinue">Continue</button>' : `
       <button class="secondary-button" id="mesoEdit">Edit</button>
       <button class="secondary-button" id="mesoDraft">Save draft</button>
       <button class="primary-button" id="mesoStart">Start mesocycle</button>`}`;
-  document.querySelector("#mesoBack")?.addEventListener("click", () => { saveMesoStep(); mesoStep--; renderMesoBuilder(); });
+  document.querySelector("#mesoBack")?.addEventListener("click", () => { captureMesoStep(); mesoStep--; renderMesoBuilder(); });
   document.querySelector("#mesoContinue")?.addEventListener("click", () => { if (saveMesoStep()) { mesoStep++; renderMesoBuilder(); } });
   document.querySelector("#mesoEdit")?.addEventListener("click", () => { mesoStep = 1; renderMesoBuilder(); });
   document.querySelector("#mesoDraft")?.addEventListener("click", saveMesocycleDraft);
@@ -158,8 +161,8 @@ function mesoExerciseEditor(exercise, slot, index) {
     <label>Exercise<select class="library-exercise-select"><option value="">Choose an exercise${targetMuscle?` for ${escapeHtml(targetMuscle)}`:""}</option>${exercise.name&&!currentIsListed?`<option value="__current__" selected>${escapeHtml(exercise.name)} (current custom exercise)</option>`:""}${availableExercises.map(definition=>`<option value="${escapeHtml(definition.id)}" ${definition.id===exercise.libraryExerciseId?"selected":""}>${escapeHtml(definition.name)}</option>`).join("")}</select></label>
     <div class="form-grid"><label>Muscle<select data-field="muscle">${mesoMuscles.map(m=>`<option ${m===exercise.muscle?"selected":""}>${m}</option>`).join("")}</select></label>
     <label>Starting sets<input data-field="sets" type="number" min="1" max="10" value="${exercise.sets}"></label>
-    <label>Min reps<input data-field="minReps" type="number" min="1" value="${exercise.minReps}"></label>
-    <label>Max reps<input data-field="maxReps" type="number" min="1" value="${exercise.maxReps}"></label>
+    <label>Min reps<input data-field="minReps" type="number" min="1" max="50" value="${exercise.minReps}"></label>
+    <label>Max reps<input data-field="maxReps" type="number" min="1" max="50" value="${exercise.maxReps}"></label>
     <label>${starting.weight?weightEntryLabel(exercise.weightEntryType||"Total Weight"):"Starting weight needed"} (${weightUnit(data.profile?.units)})<input data-field="startWeight" type="number" min="0" step="${data.profile?.units==="metric"?.5:2.5}" value="${displayWeightValue(exercise.startWeight,data.profile?.units)}"></label>
     <label>Target RIR<input data-field="targetRir" type="number" min="0" max="10" value="${exercise.targetRir}"></label>
     <label>Rest seconds<input data-field="rest" type="number" min="0" value="${exercise.rest}"></label>
@@ -186,17 +189,130 @@ function renderMesoReview(body) {
     <div class="review-card"><h3>Estimated weekly sets</h3><p>${Object.entries(totals).map(([m,n])=>`${escapeHtml(m)}: ${n}`).join(" • ")||"No exercises yet"}</p></div>`;
 }
 
+function captureMesoStep() {
+  if (mesoStep !== 1 || !document.querySelector("#mesoName")) return;
+  mesoBuilder.name = document.querySelector("#mesoName").value.trim();
+  mesoBuilder.startDate = document.querySelector("#mesoStartDate").value;
+  mesoBuilder.trainingWeeks = Number(document.querySelector("#mesoWeeks").value);
+  mesoBuilder.includeDeload = document.querySelector("#mesoDeload").value === "yes";
+  mesoBuilder.totalWeeks = mesoBuilder.trainingWeeks + (mesoBuilder.includeDeload ? 1 : 0);
+}
+
+function assignMesoValidationKeys(step) {
+  if (step === 1) {
+    FormValidation.setKey(document.querySelector("#mesoName"), "mesocycle.name");
+    FormValidation.setKey(document.querySelector("#mesoStartDate"), "mesocycle.startDate");
+    FormValidation.setKey(document.querySelector("#mesoWeeks"), "mesocycle.trainingWeeks");
+    return;
+  }
+  if (step === 2) {
+    FormValidation.setKey(document.querySelector("#mesoDaysPerWeek"), "mesocycle.daysPerWeek");
+    const dayKeys = mesoBuilder.schedule.map((slot, index) => `schedule.${index}.dayIndex`);
+    document.querySelectorAll(".meso-day-select").forEach((field, index) => FormValidation.setKey(field, dayKeys[index], dayKeys));
+    return;
+  }
+  if (step !== 3) return;
+  document.querySelectorAll("#mesoWorkoutDays .meso-workout-card").forEach((workoutCard, dayIndex) => {
+    const exercisesHolder = workoutCard.querySelector(".meso-exercises");
+    FormValidation.setKey(exercisesHolder, `schedule.${dayIndex}.exercises`);
+    workoutCard.querySelectorAll(".exercise-meso-card").forEach((exerciseCard, exerciseIndex) => {
+      const prefix = `schedule.${dayIndex}.exercises.${exerciseIndex}`;
+      FormValidation.setKey(exerciseCard.querySelector(".exercise-target-muscle"), `${prefix}.targetMuscle`);
+      FormValidation.setKey(exerciseCard.querySelector(".library-exercise-select"), `${prefix}.name`);
+      FormValidation.setKey(exerciseCard.querySelector('[data-field="sets"]'), `${prefix}.sets`);
+      FormValidation.setKey(exerciseCard.querySelector('[data-field="minReps"]'), `${prefix}.minReps`, [`${prefix}.maxReps`]);
+      FormValidation.setKey(exerciseCard.querySelector('[data-field="maxReps"]'), `${prefix}.maxReps`);
+      FormValidation.setKey(exerciseCard.querySelector('[data-field="startWeight"]'), `${prefix}.startWeight`);
+      FormValidation.setKey(exerciseCard.querySelector('[data-field="targetRir"]'), `${prefix}.targetRir`);
+      FormValidation.setKey(exerciseCard.querySelector('[data-field="rest"]'), `${prefix}.rest`);
+      FormValidation.setKey(exerciseCard.querySelector('[data-field="increment"]'), `${prefix}.increment`);
+    });
+  });
+}
+
+function isMesoFieldCorrected(field) {
+  if (field.matches("input, select, textarea") && !field.checkValidity()) return false;
+  const key = field.dataset.validationKey || "";
+  if (key.endsWith(".dayIndex")) return new Set(mesoBuilder.schedule.map(slot => slot.dayIndex)).size === mesoBuilder.schedule.length;
+  if (key.endsWith(".maxReps")) {
+    const card = field.closest(".exercise-meso-card");
+    return Number(field.value) >= Number(card.querySelector('[data-field="minReps"]').value);
+  }
+  if (key.endsWith(".name") || key.endsWith(".targetMuscle") || key === "mesocycle.startDate") return Boolean(field.value.trim());
+  return field.value !== "";
+}
+
+function validateMesoStep(step, mesocycle = mesoBuilder) {
+  const result = FormValidation.createResult();
+  if (step === 1) {
+    const useDom = mesocycle === mesoBuilder && mesoStep === 1 && document.querySelector("#mesoName");
+    const name = useDom ? document.querySelector("#mesoName").value : mesocycle.name;
+    const startDate = useDom ? document.querySelector("#mesoStartDate").value : mesocycle.startDate;
+    const weeks = useDom ? document.querySelector("#mesoWeeks").value : mesocycle.trainingWeeks;
+    FormValidation.required(result, "mesocycle.name", name, "Enter a mesocycle name.");
+    FormValidation.required(result, "mesocycle.startDate", startDate, "Choose a start date.");
+    if (startDate) FormValidation.related(result, "mesocycle.startDate", !Number.isNaN(new Date(`${startDate}T12:00:00`).getTime()), "Choose a valid start date.");
+    FormValidation.number(result, "mesocycle.trainingWeeks", weeks, { label: "Training weeks", min: 2, max: 12, integer: true });
+    return result;
+  }
+  if (step === 2) {
+    FormValidation.number(result, "mesocycle.daysPerWeek", mesocycle.daysPerWeek, { label: "Days per week", min: 2, max: 7, integer: true });
+    const occurrences = {};
+    mesocycle.schedule.forEach(slot => { occurrences[slot.dayIndex] = (occurrences[slot.dayIndex] || 0) + 1; });
+    mesocycle.schedule.forEach((slot, index) => {
+      if (occurrences[slot.dayIndex] > 1) {
+        const day = mesoWeekdays[slot.dayIndex] || "This weekday";
+        FormValidation.addError(result, `schedule.${index}.dayIndex`, `${day} is selected more than once. Choose a different weekday.`, `Training day ${index + 1} duplicates ${day}.`);
+      }
+    });
+    return result;
+  }
+  if (step !== 3) return result;
+
+  const domWorkoutCards = mesocycle === mesoBuilder && mesoStep === 3 ? [...document.querySelectorAll("#mesoWorkoutDays .meso-workout-card")] : [];
+  mesocycle.schedule.forEach((slot, dayIndex) => {
+    const workoutPrefix = `schedule.${dayIndex}`;
+    FormValidation.collection(result, `${workoutPrefix}.exercises`, slot.workout.exercises, { message: `Add at least one exercise to ${mesoWeekdays[slot.dayIndex]}.` });
+    slot.workout.exercises.forEach((exercise, exerciseIndex) => {
+      const prefix = `${workoutPrefix}.exercises.${exerciseIndex}`;
+      const domCard = domWorkoutCards[dayIndex]?.querySelectorAll(".exercise-meso-card")[exerciseIndex];
+      const domValue = (selector, fallback) => domCard?.querySelector(selector)?.value ?? fallback;
+      const targetMuscle = domValue(".exercise-target-muscle", exercise.targetMuscle || exercise.primaryMuscle || "");
+      const exerciseChoice = domValue(".library-exercise-select", exercise.name || "");
+      const minReps = domValue('[data-field="minReps"]', exercise.minReps);
+      const maxReps = domValue('[data-field="maxReps"]', exercise.maxReps);
+      FormValidation.required(result, `${prefix}.targetMuscle`, targetMuscle, "Choose a target muscle group.");
+      FormValidation.required(result, `${prefix}.name`, exerciseChoice, "Choose an exercise from the library or create a custom exercise.");
+      FormValidation.number(result, `${prefix}.sets`, domValue('[data-field="sets"]', exercise.sets), { label: "Starting sets", min: 1, max: 10, integer: true });
+      FormValidation.number(result, `${prefix}.minReps`, minReps, { label: "Minimum reps", min: 1, max: 50, integer: true });
+      FormValidation.number(result, `${prefix}.maxReps`, maxReps, { label: "Maximum reps", min: 1, max: 50, integer: true });
+      if (minReps !== "" && maxReps !== "") FormValidation.related(result, `${prefix}.maxReps`, Number(maxReps) >= Number(minReps), "Maximum reps must be greater than or equal to minimum reps.");
+      FormValidation.number(result, `${prefix}.startWeight`, domValue('[data-field="startWeight"]', exercise.startWeight), { label: "Starting weight", min: 0 });
+      FormValidation.number(result, `${prefix}.targetRir`, domValue('[data-field="targetRir"]', exercise.targetRir), { label: "Target RIR", min: 0, max: 10, integer: true });
+      FormValidation.number(result, `${prefix}.rest`, domValue('[data-field="rest"]', exercise.rest), { label: "Rest seconds", min: 0, integer: true });
+      FormValidation.number(result, `${prefix}.increment`, domValue('[data-field="increment"]', exercise.increment), { label: "Weight increase", min: 0 });
+    });
+  });
+  return result;
+}
+
+function showMesoValidation(result) {
+  return FormValidation.apply(document.querySelector("#mesocycleBuilderBody"), result, {
+    summaryTitle: "This mesocycle step needs attention:"
+  });
+}
+
 function saveMesoStep() {
-  if (mesoStep===1) {
-    const name=document.querySelector("#mesoName").value.trim(); if(!name){alert("Enter a mesocycle name.");return false;}
-    mesoBuilder.name=name; mesoBuilder.startDate=document.querySelector("#mesoStartDate").value; mesoBuilder.trainingWeeks=Number(document.querySelector("#mesoWeeks").value);
-    mesoBuilder.includeDeload=document.querySelector("#mesoDeload").value==="yes"; mesoBuilder.totalWeeks=mesoBuilder.trainingWeeks+(mesoBuilder.includeDeload?1:0);
+  captureMesoStep();
+  return showMesoValidation(validateMesoStep(mesoStep));
+}
+
+function firstInvalidMesoStep(mesocycle) {
+  for (const step of [1, 2, 3]) {
+    const result = validateMesoStep(step, mesocycle);
+    if (!result.isValid) return { step, result };
   }
-  if (mesoStep===2) {
-    const unique=new Set(mesoBuilder.schedule.map(s=>s.dayIndex)); if(unique.size!==mesoBuilder.schedule.length){alert("Choose a different weekday for each training day.");return false;}
-  }
-  if (mesoStep===3 && mesoBuilder.schedule.some(s=>!s.workout.name.trim()||!s.workout.exercises.length||s.workout.exercises.some(e=>!e.name.trim()))){alert("Name every workout and exercise before continuing.");return false;}
-  return true;
+  return null;
 }
 
 function saveMesocycleDraft() {
@@ -207,6 +323,18 @@ function saveMesocycleDraft() {
 
 function activateMesocycle(meso) {
   if(data.mesocycles.active && data.mesocycles.active.id!==meso.id){alert("End, complete, or return the active mesocycle to drafts before starting another.");return;}
+  const invalid = firstInvalidMesoStep(meso);
+  if (invalid) {
+    mesoBuilder = structuredClone(meso);
+    mesoStep = invalid.step;
+    document.querySelector("#mesocycleDialogTitle").textContent = meso.sourceTemplateId ? "Build mesocycle" : "Edit mesocycle";
+    renderMesoBuilder();
+    const dialog = document.querySelector("#mesocycleDialog");
+    FormValidation.bindLiveClear(dialog, { isCorrected: isMesoFieldCorrected });
+    if (!dialog.open) dialog.showModal();
+    showMesoValidation(validateMesoStep(mesoStep));
+    return;
+  }
   meso.status="active"; meso.activatedAt=new Date().toISOString(); meso.progress=meso.progress||{week:1,slot:0,completed:[],skipped:[],needsWeekReview:false};
   meso.schedule.forEach(slot=>ensureWorkoutTemplate(slot.workout)); data.mesocycles.active=structuredClone(meso); data.mesocycles.drafts=data.mesocycles.drafts.filter(m=>m.id!==meso.id);
   document.querySelector("#mesocycleDialog").close(); saveData();
