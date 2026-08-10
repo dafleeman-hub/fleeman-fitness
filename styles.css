@@ -18,6 +18,73 @@
   font-family: Bahnschrift, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+/* Mesocycle builder reliability: nested selectors and draft recovery. */
+.builder-save-status {
+  min-height: 1.2em;
+  margin: .2rem 0 0;
+  color: var(--muted);
+  font-size: .78rem;
+}
+
+.builder-save-status[data-state="saving"] { color: var(--accent); }
+.builder-save-status[data-state="error"] { color: #ff9696; }
+
+html.nested-overlay-open,
+body.nested-overlay-open {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+dialog.overlay-underlay-frozen { pointer-events: none; }
+
+dialog.overlay-underlay-frozen > .dialog-card {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+dialog.nested-builder-overlay {
+  z-index: 1000;
+  width: min(920px, 100%);
+  max-width: 100%;
+  max-height: 100dvh;
+  margin: auto;
+}
+
+dialog.nested-builder-overlay::backdrop {
+  background: rgba(0, 0, 0, .78);
+  backdrop-filter: blur(3px);
+}
+
+dialog.nested-builder-overlay > .dialog-card {
+  width: 100%;
+  max-width: 100%;
+  max-height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-right: max(1rem, env(safe-area-inset-right));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  padding-left: max(1rem, env(safe-area-inset-left));
+}
+
+.saved-workout-picker-list { display: grid; gap: .75rem; }
+
+.saved-workout-picker-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .75rem;
+}
+
+.saved-workout-picker-item p { margin: .2rem 0 0; }
+.meso-saved-workout-trigger { width: 100%; }
+
+@media (max-width: 430px) {
+  .saved-workout-picker-item { grid-template-columns: 1fr; }
+  .saved-workout-picker-item button { width: 100%; min-height: 44px; }
+}
+
 * { box-sizing: border-box; }
 html, body { max-width: 100%; overflow-x: hidden; }
 body {
