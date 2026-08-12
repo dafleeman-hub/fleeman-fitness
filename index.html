@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Fleeman Fit" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=62" />
   <title>Fleeman Fitness</title>
 </head>
 <body>
@@ -150,6 +150,7 @@
         <div id="muscleFilterRow" class="filter-scroll horizontal-scroll-row" aria-label="Muscle filters"></div>
         <div class="library-filter-grid">
           <label>Equipment<select id="equipmentFilter"><option value="">All equipment</option></select></label>
+          <label>Load category<select id="loadTypeFilter"><option value="">All load types</option><option value="bodyweight">Bodyweight</option></select></label>
           <label>Type<select id="exerciseTypeFilter"><option value="">Compound and isolation</option><option>Compound</option><option>Isolation</option></select></label>
         </div>
         <div class="exercise-actions"><button id="favoritesFilterButton" class="secondary-button" aria-pressed="false">☆ Favorites</button><button id="recentFilterButton" class="secondary-button" aria-pressed="false">Recently used</button><button id="clearExerciseFiltersButton" class="secondary-button">Clear filters</button><button id="createCustomExerciseButton" class="secondary-button">Create Custom Exercise</button></div>
@@ -397,8 +398,8 @@
       </div>
       <div class="form-grid">
         <label>Sets<input class="exercise-sets" type="number" min="1" max="10" value="3" /></label>
-        <label>Min reps<input class="exercise-min-reps" type="number" min="1" max="50" value="8" /></label>
-        <label>Max reps<input class="exercise-max-reps" type="number" min="1" max="50" value="12" /></label>
+        <label>Min reps / seconds<input class="exercise-min-reps" type="number" min="1" max="600" value="8" /></label>
+        <label>Max reps / seconds<input class="exercise-max-reps" type="number" min="1" max="600" value="12" /></label>
         <label><span class="exercise-weight-label">Start weight</span><input class="exercise-weight" type="number" min="0" step="2.5" value="0" /></label>
         <label>Target RIR<input class="exercise-target-rir" type="number" min="0" max="10" value="3" /></label>
         <label>Rest seconds<input class="exercise-rest" type="number" min="0" value="90" /></label>
@@ -407,14 +408,16 @@
     </div>
   </template>
 
-  <script src="exercise-library.js"></script>
-  <script src="program-templates.js"></script>
-  <script src="starting-weight-rules.js"></script>
-  <script src="validation.js"></script>
-  <script src="app.js"></script>
-  <script src="live-workout.js"></script>
-  <script src="mesocycles.js"></script>
-  <script src="rolling-cycles.js"></script>
-  <script src="builder-reliability.js"></script>
+  <script src="exercise-library.js?v=62"></script>
+  <script src="bodyweight-exercises.js?v=62"></script>
+  <script src="program-templates.js?v=62"></script>
+  <script src="starting-weight-rules.js?v=62"></script>
+  <script src="validation.js?v=62"></script>
+  <script src="app.js?v=62"></script>
+  <script src="live-workout.js?v=62"></script>
+  <script src="mesocycles.js?v=62"></script>
+  <script src="rolling-cycles.js?v=62"></script>
+  <script src="builder-reliability.js?v=62"></script>
+  <script src="fitness-enhancements.js?v=62"></script>
 </body>
 </html>

@@ -85,6 +85,105 @@ dialog.nested-builder-overlay > .dialog-card {
   .saved-workout-picker-item button { width: 100%; min-height: 44px; }
 }
 
+/* Local bodyweight, custom-exercise, quick-profile, and rest-timer update. */
+.custom-exercise-dialog { width: min(760px, 100%); }
+.custom-exercise-grid { padding-bottom: 1rem; }
+.secondary-muscle-field,
+.strength-anchor-card,
+.rest-timer-preferences {
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(8, 13, 20, .55);
+}
+.secondary-muscle-field legend,
+.strength-anchor-card legend,
+.rest-timer-preferences legend { padding: 0 6px; font-weight: 800; }
+.secondary-muscle-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.secondary-muscle-grid label {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.secondary-muscle-grid input { width: auto; }
+.bodyweight-prescription-field { min-height: 70px; justify-content: center; }
+.bodyweight-prescription-field > span,
+.bodyweight-load-display span { display: block; color: var(--muted); font-size: .78rem; text-transform: uppercase; }
+.bodyweight-prescription-field > strong,
+.bodyweight-load-display strong { display: block; font-size: 1rem; }
+.setup-choice-grid,
+.quick-anchor-grid { display: grid; gap: 12px; }
+.setup-choice-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+.setup-choice-card {
+  min-height: 170px;
+  padding: 20px;
+  text-align: left;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.setup-choice-card.recommended { border-color: var(--accent); box-shadow: inset 3px 0 var(--accent); }
+.setup-choice-card strong { font-size: 1.35rem; }
+.setup-choice-card small { color: var(--muted); line-height: 1.45; }
+.quick-anchor-grid { grid-template-columns: repeat(3, minmax(0,1fr)); margin: 14px 0; }
+.strength-anchor-card { display: grid; gap: 10px; }
+.anchor-recent { display: grid; gap: 8px; }
+.optional-pull { margin-bottom: 14px; }
+.rest-timer-panel {
+  position: sticky;
+  top: 76px;
+  z-index: 8;
+  margin: 0 0 14px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: minmax(130px, auto) 1fr;
+  align-items: center;
+  gap: 12px;
+  background: rgba(15, 22, 30, .97);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+.rest-timer-panel.complete { border-color: var(--success); }
+#restTimerValue { display: block; font-size: 1.8rem; font-variant-numeric: tabular-nums; }
+#restTimerContext { margin: 2px 0 0; color: var(--muted); font-size: .82rem; }
+.rest-timer-actions { display: flex; justify-content: flex-end; gap: 7px; overflow-x: auto; scrollbar-width: none; }
+.rest-timer-actions::-webkit-scrollbar { display: none; }
+.rest-timer-actions button { flex: 0 0 auto; min-height: 44px; }
+.rest-timer-preferences { display: grid; gap: 10px; }
+.bodyweight-load-display {
+  min-height: 62px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #09101a;
+}
+
+@media (max-width: 620px) {
+  .secondary-muscle-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .setup-choice-grid,
+  .quick-anchor-grid { grid-template-columns: 1fr; }
+  .rest-timer-panel { top: 64px; grid-template-columns: 1fr; }
+  .rest-timer-actions { justify-content: flex-start; }
+}
+
+@media (max-width: 340px) {
+  .secondary-muscle-grid { grid-template-columns: 1fr; }
+}
+
 * { box-sizing: border-box; }
 html, body { max-width: 100%; overflow-x: hidden; }
 body {

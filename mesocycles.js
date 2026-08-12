@@ -161,8 +161,8 @@ function mesoExerciseEditor(exercise, slot, index) {
     <label>Exercise<select class="library-exercise-select"><option value="">Choose an exercise${targetMuscle?` for ${escapeHtml(targetMuscle)}`:""}</option>${exercise.name&&!currentIsListed?`<option value="__current__" selected>${escapeHtml(exercise.name)} (current custom exercise)</option>`:""}${availableExercises.map(definition=>`<option value="${escapeHtml(definition.id)}" ${definition.id===exercise.libraryExerciseId?"selected":""}>${escapeHtml(definition.name)}</option>`).join("")}</select></label>
     <div class="form-grid"><label>Muscle<select data-field="muscle">${mesoMuscles.map(m=>`<option ${m===exercise.muscle?"selected":""}>${m}</option>`).join("")}</select></label>
     <label>Starting sets<input data-field="sets" type="number" min="1" max="10" value="${exercise.sets}"></label>
-    <label>Min reps<input data-field="minReps" type="number" min="1" max="50" value="${exercise.minReps}"></label>
-    <label>Max reps<input data-field="maxReps" type="number" min="1" max="50" value="${exercise.maxReps}"></label>
+    <label>Min reps / seconds<input data-field="minReps" type="number" min="1" max="600" value="${exercise.minReps}"></label>
+    <label>Max reps / seconds<input data-field="maxReps" type="number" min="1" max="600" value="${exercise.maxReps}"></label>
     <label>${starting.weight?weightEntryLabel(exercise.weightEntryType||"Total Weight"):"Starting weight needed"} (${weightUnit(data.profile?.units)})<input data-field="startWeight" type="number" min="0" step="${data.profile?.units==="metric"?.5:2.5}" value="${displayWeightValue(exercise.startWeight,data.profile?.units)}"></label>
     <label>Target RIR<input data-field="targetRir" type="number" min="0" max="10" value="${exercise.targetRir}"></label>
     <label>Rest seconds<input data-field="rest" type="number" min="0" value="${exercise.rest}"></label>
@@ -284,9 +284,9 @@ function validateMesoStep(step, mesocycle = mesoBuilder) {
       FormValidation.required(result, `${prefix}.targetMuscle`, targetMuscle, "Choose a target muscle group.");
       FormValidation.required(result, `${prefix}.name`, exerciseChoice, "Choose an exercise from the library or create a custom exercise.");
       FormValidation.number(result, `${prefix}.sets`, domValue('[data-field="sets"]', exercise.sets), { label: "Starting sets", min: 1, max: 10, integer: true });
-      FormValidation.number(result, `${prefix}.minReps`, minReps, { label: "Minimum reps", min: 1, max: 50, integer: true });
-      FormValidation.number(result, `${prefix}.maxReps`, maxReps, { label: "Maximum reps", min: 1, max: 50, integer: true });
-      if (minReps !== "" && maxReps !== "") FormValidation.related(result, `${prefix}.maxReps`, Number(maxReps) >= Number(minReps), "Maximum reps must be greater than or equal to minimum reps.");
+      FormValidation.number(result, `${prefix}.minReps`, minReps, { label: "Minimum reps or seconds", min: 1, max: 600, integer: true });
+      FormValidation.number(result, `${prefix}.maxReps`, maxReps, { label: "Maximum reps or seconds", min: 1, max: 600, integer: true });
+      if (minReps !== "" && maxReps !== "") FormValidation.related(result, `${prefix}.maxReps`, Number(maxReps) >= Number(minReps), "Maximum reps or seconds must be greater than or equal to the minimum.");
       FormValidation.number(result, `${prefix}.startWeight`, domValue('[data-field="startWeight"]', exercise.startWeight), { label: "Starting weight", min: 0 });
       FormValidation.number(result, `${prefix}.targetRir`, domValue('[data-field="targetRir"]', exercise.targetRir), { label: "Target RIR", min: 0, max: 10, integer: true });
       FormValidation.number(result, `${prefix}.rest`, domValue('[data-field="rest"]', exercise.rest), { label: "Rest seconds", min: 0, integer: true });

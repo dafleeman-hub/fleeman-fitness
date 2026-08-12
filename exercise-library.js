@@ -85,6 +85,7 @@ function exerciseDefinitionToPrescription(definition) {
     muscle: definition.primaryMuscle, primaryMuscle: definition.primaryMuscle, secondaryMuscles: [...definition.secondaryMuscles], muscleTags: [...definition.muscleTags],
     equipment: [...definition.equipment], exerciseType: definition.exerciseType, movementPattern: definition.movementPattern, laterality: definition.laterality,
     substitutionFamily: definition.substitutionFamily, weightEntryType: definition.defaults.weightEntryType, sourceType: definition.sourceType,
+    progressionMode: definition.progressionMode || definition.defaults.progressionMode || "manual", repUnit: definition.repUnit || definition.defaults.repUnit || "reps",
     sets: definition.defaults.sets, minReps: definition.defaults.minReps, maxReps: definition.defaults.maxReps, targetRir: definition.defaults.targetRIR,
     rest: definition.defaults.restSeconds, increment: definition.defaults.weightIncrement, startWeight: 0, setup: [...definition.setup], cues: [...definition.cues]
   };

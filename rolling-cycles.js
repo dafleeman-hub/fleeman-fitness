@@ -368,7 +368,7 @@ function renderRollingReview(body) {
     <div class="rolling-preview-days">${mesoBuilder.schedule.map((slot, index) => {
       if (slot.dayType === "rest") return `<details class="review-card"><summary><strong>Day ${index + 1}: ${escapeHtml(slot.restTitle || "Rest Day")}</strong><span>${rollingPreviewDate(mesoBuilder, index)}</span></summary><p>Rest Day${slot.notes ? ` • ${escapeHtml(slot.notes)}` : ""}</p></details>`;
       const totals = workoutPreviewTotals(slot.workout);
-      return `<details class="review-card" ${index === 0 ? "open" : ""}><summary><strong>Day ${index + 1}: ${escapeHtml(slot.workout.name)}</strong><span>${rollingPreviewDate(mesoBuilder, index)}</span></summary><p>${totals.exerciseCount} exercises • ${totals.totalSets} working sets • approximately ${totals.estimatedMinutes} minutes</p>${slot.workout.exercises.map(exercise => `<p><strong>${escapeHtml(exercise.name)}</strong> — ${exercise.sets} sets • ${exercise.minReps}-${exercise.maxReps} reps • target RIR ${exercise.targetRir}</p>`).join("")}</details>`;
+      return `<details class="review-card" ${index === 0 ? "open" : ""}><summary><strong>Day ${index + 1}: ${escapeHtml(slot.workout.name)}</strong><span>${rollingPreviewDate(mesoBuilder, index)}</span></summary><p>${totals.exerciseCount} exercises • ${totals.totalSets} working sets • approximately ${totals.estimatedMinutes} minutes</p>${slot.workout.exercises.map(exercise => `<p><strong>${escapeHtml(exercise.name)}</strong> — ${exercise.sets} sets • ${exercise.minReps}-${exercise.maxReps} ${exerciseRepLabel(exercise)} • target RIR ${exercise.targetRir}</p>`).join("")}</details>`;
     }).join("")}</div>
     <div class="review-card"><h3>Sequence preview</h3><p>Cycle Day 1: ${rollingPreviewDate(mesoBuilder, 0)}<br>Cycle Day ${mesoBuilder.cycleLength}: ${rollingPreviewDate(mesoBuilder, mesoBuilder.cycleLength - 1)}<br>Next Cycle Day 1: ${rollingPreviewDate(mesoBuilder, mesoBuilder.cycleLength)}</p></div>`;
 }
@@ -482,9 +482,9 @@ function validateRollingWorkouts(mesocycle) {
       FormValidation.required(result, `${exercisePrefix}.targetMuscle`, targetMuscle, "Choose a target muscle group.");
       FormValidation.required(result, `${exercisePrefix}.name`, exerciseChoice, "Choose an exercise from the library or create a custom exercise.");
       FormValidation.number(result, `${exercisePrefix}.sets`, domValue('[data-field="sets"]', exercise.sets), { label: "Starting sets", min: 1, max: 10, integer: true });
-      FormValidation.number(result, `${exercisePrefix}.minReps`, minReps, { label: "Minimum reps", min: 1, max: 50, integer: true });
-      FormValidation.number(result, `${exercisePrefix}.maxReps`, maxReps, { label: "Maximum reps", min: 1, max: 50, integer: true });
-      if (minReps !== "" && maxReps !== "") FormValidation.related(result, `${exercisePrefix}.maxReps`, Number(maxReps) >= Number(minReps), "Maximum reps must be greater than or equal to minimum reps.");
+      FormValidation.number(result, `${exercisePrefix}.minReps`, minReps, { label: "Minimum reps or seconds", min: 1, max: 600, integer: true });
+      FormValidation.number(result, `${exercisePrefix}.maxReps`, maxReps, { label: "Maximum reps or seconds", min: 1, max: 600, integer: true });
+      if (minReps !== "" && maxReps !== "") FormValidation.related(result, `${exercisePrefix}.maxReps`, Number(maxReps) >= Number(minReps), "Maximum reps or seconds must be greater than or equal to the minimum.");
       FormValidation.number(result, `${exercisePrefix}.startWeight`, domValue('[data-field="startWeight"]', exercise.startWeight), { label: "Starting weight", min: 0 });
       FormValidation.number(result, `${exercisePrefix}.targetRir`, domValue('[data-field="targetRir"]', exercise.targetRir), { label: "Target RIR", min: 0, max: 10, integer: true });
       FormValidation.number(result, `${exercisePrefix}.rest`, domValue('[data-field="rest"]', exercise.rest), { label: "Rest seconds", min: 0, integer: true });

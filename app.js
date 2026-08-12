@@ -1,10 +1,10 @@
 
 const STORAGE_KEY = "fleemanFitnessDataV1";
-const APP_VERSION = "1.3.0-beta";
+const APP_VERSION = "1.4.0-beta";
 let previewReturnFocus = null;
 let previewScrollPosition = 0;
 const defaultData = {
-  settings: { increment: 5, rest: 90, autoCollapseExercises: true },
+  settings: { increment: 5, rest: 90, autoCollapseExercises: true, restTimerAlerts: { vibration: true, tone: false } },
   ui: { activeView: "homeView", librarySection: "premade" },
   selectedWorkoutId: "push-a",
   activeWorkoutSession: null,
@@ -13,7 +13,7 @@ const defaultData = {
   profile: {
     id:"local-user",displayName:"",units:"imperial",height:{value:null,unit:"in"},bodyWeight:{value:null,unit:"lb"},age:null,gender:"",experienceLevel:"",yearsExperience:null,
     trainingBackground:{barbell:"",dumbbell:"",machines:"",structuredPrograms:"",comfortableWithRIR:false,knownWorkingWeights:"unknown"},currentTrainingDays:null,preferredTrainingDays:null,primaryGoal:"",customGoal:"",
-    strengthBaselines:[],skippedBaselineCategories:[],startingWeightRecommendations:[],calibrationHistory:[],recalculationHistory:[],onboardingStatus:{completed:false,dismissedUntil:null,currentStep:1,declined:false},createdAt:"",updatedAt:""
+    strengthBaselines:[],quickStrengthProfile:{bench:null,squat:null,deadlift:null,pulling:null},skippedBaselineCategories:[],startingWeightRecommendations:[],calibrationHistory:[],recalculationHistory:[],onboardingStatus:{completed:false,dismissedUntil:null,currentStep:1,declined:false},createdAt:"",updatedAt:""
   },
   workouts: [
     {
@@ -67,7 +67,7 @@ let pendingSorenessPlan = null;
 let waitingServiceWorker = null;
 let updateReloading = false;
 let exerciseLibraryContext = { type: "browse" };
-let exerciseLibraryFilters = { search: "", muscle: "", equipment: "", type: "", favorites: false, recent: false };
+let exerciseLibraryFilters = { search: "", muscle: "", equipment: "", loadType: "", type: "", favorites: false, recent: false };
 let exercisePreviewReturnFocus = null;
 let previewedProgramTemplate = null;
 let programPreviewReturnFocus = null;
@@ -181,10 +181,10 @@ function mergeWithDefaults(saved) {
   const merged = {
     ...structuredClone(defaultData),
     ...saved,
-    settings: { ...defaultData.settings, ...saved.settings },
+    settings: { ...defaultData.settings, ...saved.settings, restTimerAlerts: { ...defaultData.settings.restTimerAlerts, ...(saved.settings?.restTimerAlerts || {}) } },
     ui: { ...defaultData.ui, ...(saved.ui || {}) },
     exerciseLibraryUser: { ...structuredClone(defaultData.exerciseLibraryUser), ...(saved.exerciseLibraryUser || {}) },
-    profile: {...structuredClone(defaultData.profile),...(saved.profile||{}),trainingBackground:{...defaultData.profile.trainingBackground,...(saved.profile?.trainingBackground||{})},onboardingStatus:{...defaultData.profile.onboardingStatus,...(saved.profile?.onboardingStatus||{})}}
+    profile: {...structuredClone(defaultData.profile),...(saved.profile||{}),quickStrengthProfile:{...defaultData.profile.quickStrengthProfile,...(saved.profile?.quickStrengthProfile||{})},trainingBackground:{...defaultData.profile.trainingBackground,...(saved.profile?.trainingBackground||{})},onboardingStatus:{...defaultData.profile.onboardingStatus,...(saved.profile?.onboardingStatus||{})}}
   };
   migrateExerciseReferences(merged);
   return merged;
@@ -192,6 +192,17 @@ function mergeWithDefaults(saved) {
 
 function normalizedExerciseName(name="") { return name.toLowerCase().replace(/[^a-z0-9]+/g,"").trim(); }
 function allExerciseDefinitions() { return [...COMMERCIAL_GYM_EXERCISES, ...(data.exerciseLibraryUser?.customExercises || [])]; }
+function exerciseRepUnit(exercise={}) { const definition=typeof definitionForExercise==="function"?definitionForExercise(exercise):null;return exercise.repUnit||exercise.defaults?.repUnit||definition?.repUnit||definition?.defaults?.repUnit||(exercise.progressionMode==="duration"||exercise.defaults?.progressionMode==="duration"||definition?.progressionMode==="duration"||definition?.defaults?.progressionMode==="duration"?"seconds":"reps"); }
+function exerciseRepLabel(exercise={}) { return exerciseRepUnit(exercise) === "seconds" ? "sec" : "reps"; }
+function exerciseHistorySummary(exercise={}) {
+  const completed = (exercise.sets || []).filter(set => set.done);
+  const last = completed[completed.length - 1];
+  const definition = typeof definitionForExercise === "function" ? definitionForExercise(exercise) : null;
+  const entry = exercise.weightEntryType || definition?.defaults?.weightEntryType || "Total Weight";
+  const amount = `${displayWeightValue(last?.weight ?? exercise.weight ?? 0,data.profile?.units)} ${weightUnit(data.profile?.units)}`;
+  const load = entry === "Bodyweight" ? "Bodyweight" : entry === "Bodyweight + Added Weight" || entry === "Bodyweight Plus Added Weight" ? `Bodyweight + ${amount}` : entry === "Assisted Bodyweight" ? `${amount} assistance` : amount;
+  return `${escapeHtml(exercise.name)}: ${escapeHtml(load)}${last ? ` × ${Number(last.reps) || 0} ${exerciseRepLabel(exercise)}` : ""}`;
+}
 function migrateExerciseReferences(target=data) {
   const byName = new Map(COMMERCIAL_GYM_EXERCISES.map(exercise => [normalizedExerciseName(exercise.name),exercise.id]));
   const migrate = exercise => { if(!exercise.libraryExerciseId) exercise.libraryExerciseId=byName.get(normalizedExerciseName(exercise.name))||null; return exercise; };
@@ -322,7 +333,8 @@ function addOnboardingBaseline(){const result=FormValidation.createResult();cons
 function finishOnboarding(){saveOnboardingStep();const now=new Date().toISOString();onboardingDraft.onboardingStatus={completed:true,dismissedUntil:null,currentStep:4,declined:false};onboardingDraft.createdAt=onboardingDraft.createdAt||now;onboardingDraft.updatedAt=now;data.profile=structuredClone(onboardingDraft);document.querySelector("#onboardingDialog").close();saveData();}
 function dismissOnboarding(){
   if(data.profile.onboardingStatus?.completed){document.querySelector("#onboardingDialog").close();renderAll();return;}
-  saveOnboardingStep();
+  if(typeof onboardingMode!=="undefined"&&onboardingMode==="quick"&&typeof saveQuickStrengthDraft==="function")saveQuickStrengthDraft(false);
+  else if(document.querySelector("#profileUnits"))saveOnboardingStep();
   data.profile={...data.profile,...onboardingDraft,onboardingStatus:{...data.profile.onboardingStatus,completed:false,dismissedUntil:new Date(Date.now()+7*86400000).toISOString(),currentStep:onboardingStep}};
   document.querySelector("#onboardingDialog").close();saveData();
 }
@@ -752,9 +764,10 @@ function setLibrarySection(section, { focus = true, persist = true } = {}) {
 
 function openExerciseLibrary(context={type:"browse"}) {
   exerciseLibraryContext=context;
-  exerciseLibraryFilters={search:"",muscle:context.muscle||"",equipment:"",type:"",favorites:false,recent:false};
+  exerciseLibraryFilters={search:"",muscle:context.muscle||"",equipment:"",loadType:"",type:"",favorites:false,recent:false};
   document.querySelector("#exerciseLibrarySearch").value="";
   document.querySelector("#equipmentFilter").value="";
+  document.querySelector("#loadTypeFilter").value="";
   document.querySelector("#exerciseTypeFilter").value="";
   renderExerciseLibrary();
   document.querySelector("#exerciseLibraryDialog").showModal();
@@ -778,7 +791,8 @@ function renderExerciseLibrary(){
   let results=all.filter(exercise=>{
     const query=exerciseLibraryFilters.search.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const text=exerciseSearchText(exercise);
-    return query.every(term=>text.includes(term))&&(!exerciseLibraryFilters.muscle||exercise.primaryMuscle===exerciseLibraryFilters.muscle)&&(!exerciseLibraryFilters.equipment||(exercise.equipment||[]).includes(exerciseLibraryFilters.equipment))&&(!exerciseLibraryFilters.type||exercise.exerciseType===exerciseLibraryFilters.type)&&(!exerciseLibraryFilters.favorites||user.favorites.includes(exercise.id))&&(!exerciseLibraryFilters.recent||user.recent.includes(exercise.id));
+    const loadType=exercise.defaults?.weightEntryType||exercise.weightEntryType||"";const bodyweight=loadType==="Bodyweight"||loadType==="Bodyweight + Added Weight"||loadType==="Bodyweight Plus Added Weight"||loadType==="Assisted Bodyweight"||(exercise.equipment||[]).includes("Bodyweight");
+    return query.every(term=>text.includes(term))&&(!exerciseLibraryFilters.muscle||exercise.primaryMuscle===exerciseLibraryFilters.muscle)&&(!exerciseLibraryFilters.equipment||(exercise.equipment||[]).includes(exerciseLibraryFilters.equipment))&&(!exerciseLibraryFilters.loadType||exerciseLibraryFilters.loadType!=="bodyweight"||bodyweight)&&(!exerciseLibraryFilters.type||exercise.exerciseType===exerciseLibraryFilters.type)&&(!exerciseLibraryFilters.favorites||user.favorites.includes(exercise.id))&&(!exerciseLibraryFilters.recent||user.recent.includes(exercise.id));
   });
   if(exerciseLibraryFilters.recent) results.sort((a,b)=>user.recent.indexOf(a.id)-user.recent.indexOf(b.id)); else results.sort((a,b)=>a.name.localeCompare(b.name));
   document.querySelector("#favoritesFilterButton").setAttribute("aria-pressed",String(exerciseLibraryFilters.favorites));
@@ -791,7 +805,7 @@ function renderExerciseLibrary(){
 function exerciseLibraryCard(exercise){
   const card=document.createElement("article");card.className="library-exercise-card";
   const favorite=data.exerciseLibraryUser.favorites.includes(exercise.id);
-  card.innerHTML=`<h3>${escapeHtml(exercise.name)}</h3><p>${escapeHtml(exercise.primaryMuscle)} • ${(exercise.equipment||[]).map(escapeHtml).join(", ")} • ${escapeHtml(exercise.exerciseType)}</p><p class="small-note">Default: ${exercise.defaults.sets} sets • ${exercise.defaults.minReps}–${exercise.defaults.maxReps} reps • RIR ${exercise.defaults.targetRIR}</p><div class="exercise-actions"><button class="secondary-button favorite-button" aria-label="${favorite?"Remove":"Add"} ${escapeHtml(exercise.name)} ${favorite?"from":"to"} favorites" aria-pressed="${favorite}">${favorite?"★":"☆"}</button><button class="secondary-button preview-exercise-button">Preview</button>${exerciseLibraryContext.type!=="browse"?'<button class="primary-button compact add-library-exercise">Add</button>':""}${exercise.sourceType==="custom"?'<button class="danger-button compact delete-custom-exercise">Delete</button>':""}</div>`;
+  card.innerHTML=`<h3>${escapeHtml(exercise.name)}</h3><p>${escapeHtml(exercise.primaryMuscle)} • ${(exercise.equipment||[]).map(escapeHtml).join(", ")} • ${escapeHtml(exercise.exerciseType)}</p><p class="small-note">Default: ${exercise.defaults.sets} sets • ${exercise.defaults.minReps}–${exercise.defaults.maxReps} ${exerciseRepLabel(exercise)} • RIR ${exercise.defaults.targetRIR}</p><div class="exercise-actions"><button class="secondary-button favorite-button" aria-label="${favorite?"Remove":"Add"} ${escapeHtml(exercise.name)} ${favorite?"from":"to"} favorites" aria-pressed="${favorite}">${favorite?"★":"☆"}</button><button class="secondary-button preview-exercise-button">Preview</button>${exerciseLibraryContext.type!=="browse"?'<button class="primary-button compact add-library-exercise">Add</button>':""}${exercise.sourceType==="custom"?'<button class="danger-button compact delete-custom-exercise">Delete</button>':""}</div>`;
   card.querySelector(".favorite-button").onclick=()=>toggleExerciseFavorite(exercise.id);
   card.querySelector(".preview-exercise-button").onclick=event=>openExercisePreview(exercise,event.currentTarget);
   if (exerciseLibraryContext.type === "browse" && data.history.some(session => session.exercises?.some(item => item.libraryExerciseId === exercise.id || normalizedExerciseName(item.name) === normalizedExerciseName(exercise.name)))) {
@@ -819,7 +833,7 @@ function addExerciseFromLibrary(definition){
 function openExercisePreview(exercise,trigger){
   exercisePreviewReturnFocus=trigger;const favorite=data.exerciseLibraryUser.favorites.includes(exercise.id);const similar=allExerciseDefinitions().filter(item=>item.id!==exercise.id&&item.substitutionFamily===exercise.substitutionFamily).slice(0,6);const starting=startingWeightRecommendation(exerciseDefinitionToPrescription(exercise));
   document.querySelector("#exercisePreviewTitle").textContent=exercise.name;
-  document.querySelector("#exercisePreviewContent").innerHTML=`<p>${escapeHtml(exercise.description)}</p><div class="exercise-detail-list"><p><strong>Primary:</strong> ${escapeHtml(exercise.primaryMuscle)}</p><p><strong>Secondary:</strong> ${(exercise.secondaryMuscles||[]).map(escapeHtml).join(", ")||"None"}</p><p><strong>Equipment:</strong> ${(exercise.equipment||[]).map(escapeHtml).join(", ")}</p><p><strong>Classification:</strong> ${escapeHtml(exercise.exerciseType)} • ${escapeHtml(exercise.movementPattern)} • ${escapeHtml(exercise.laterality)}</p><p><strong>Suggested plan:</strong> ${exercise.defaults.sets} sets • ${exercise.defaults.minReps}–${exercise.defaults.maxReps} reps • RIR ${exercise.defaults.targetRIR} • ${exercise.defaults.restSeconds}s rest</p><p><strong>Increment:</strong> ${exercise.defaults.weightIncrement} lb • ${escapeHtml(exercise.defaults.weightEntryType)}</p><h3>Setup</h3><ul>${exercise.setup.map(item=>`<li>${escapeHtml(item)}</li>`).join("")}</ul><h3>Performance cues</h3><ul>${exercise.cues.map(item=>`<li>${escapeHtml(item)}</li>`).join("")}</ul>${exercise.caution?`<p class="recovery-warning">${escapeHtml(exercise.caution)}</p>`:""}<h3>Similar exercises</h3><p>${similar.map(item=>escapeHtml(item.name)).join(" • ")||"No similar exercises listed."}</p></div>`;
+  document.querySelector("#exercisePreviewContent").innerHTML=`<p>${escapeHtml(exercise.description)}</p><div class="exercise-detail-list"><p><strong>Primary:</strong> ${escapeHtml(exercise.primaryMuscle)}</p><p><strong>Secondary:</strong> ${(exercise.secondaryMuscles||[]).map(escapeHtml).join(", ")||"None"}</p><p><strong>Equipment:</strong> ${(exercise.equipment||[]).map(escapeHtml).join(", ")}</p><p><strong>Classification:</strong> ${escapeHtml(exercise.exerciseType)} • ${escapeHtml(exercise.movementPattern)} • ${escapeHtml(exercise.laterality)}</p><p><strong>Suggested plan:</strong> ${exercise.defaults.sets} sets • ${exercise.defaults.minReps}–${exercise.defaults.maxReps} ${exerciseRepLabel(exercise)} • RIR ${exercise.defaults.targetRIR} • ${exercise.defaults.restSeconds}s rest</p><p><strong>Increment:</strong> ${exercise.defaults.weightIncrement} lb • ${escapeHtml(exercise.defaults.weightEntryType)}</p><h3>Setup</h3><ul>${exercise.setup.map(item=>`<li>${escapeHtml(item)}</li>`).join("")}</ul><h3>Performance cues</h3><ul>${exercise.cues.map(item=>`<li>${escapeHtml(item)}</li>`).join("")}</ul>${exercise.caution?`<p class="recovery-warning">${escapeHtml(exercise.caution)}</p>`:""}<h3>Similar exercises</h3><p>${similar.map(item=>escapeHtml(item.name)).join(" • ")||"No similar exercises listed."}</p></div>`;
   document.querySelector("#exercisePreviewContent").insertAdjacentHTML("afterbegin",`<div class="recommendation-panel"><strong>Suggested starting weight:</strong> ${starting.weight?`${displayWeightValue(starting.weight,data.profile?.units)} ${weightUnit(data.profile?.units)}`:escapeHtml(starting.label)}<p>${escapeHtml(weightEntryLabel(exercise.defaults?.weightEntryType))}</p><span class="confidence-label">${escapeHtml(starting.label)}</span><p>${escapeHtml(starting.reason)}${starting.calibrationRecommended?" This is an estimate. Confirm it during your first workout.":""}</p><details><summary>More information about this recommendation</summary><p>Fleeman Fitness uses exercise history first, then compatible baselines and conservative estimates. You can edit the weight or calibrate it before working sets.</p></details></div>`);
   document.querySelector("#exercisePreviewActions").innerHTML=`${exerciseLibraryContext.type!=="browse"?'<button id="addExerciseFromPreviewButton" class="primary-button">Add Exercise</button>':""}<button id="favoriteExerciseFromPreviewButton" class="secondary-button">${favorite?"★ Favorited":"☆ Favorite"}</button><button id="backExercisePreviewButton" class="secondary-button">Back</button>`;
   document.querySelector("#addExerciseFromPreviewButton")?.addEventListener("click",()=>addExerciseFromLibrary(exercise));
@@ -864,7 +878,7 @@ function renderHistory() {
         <strong>${sets} sets</strong>
       </div>
       ${rollingContext}
-      ${statusText ? `<p>${statusText}</p>` : `<p>${exercises.map(e => `${escapeHtml(e.name)}: ${displayWeightValue(e.weight,data.profile?.units)} ${weightUnit(data.profile?.units)}`).join(" • ")}</p>`}
+      ${statusText ? `<p>${statusText}</p>` : `<p>${exercises.map(exerciseHistorySummary).join(" • ")}</p>`}
       ${h.soreness?.ratings ? `<p class="small-note">Soreness: ${Object.entries(h.soreness.ratings).map(([muscle,rating]) => `${sorenessLabel(muscle)} — ${["Not sore","A little sore","I still feel it","I can barely move"][rating]}`).join(" • ")} • ${h.soreness.decision}</p>` : ""}
       ${exercises.some(e => Number(e.jointPain?.rating) > 1) ? `<p class="small-note">Joint pain: ${exercises.filter(e=>Number(e.jointPain?.rating)>1).map(e=>`${escapeHtml(e.name)} ${e.jointPain.rating}/5 (${(e.jointPain.joints||[]).map(escapeHtml).join(", ")})`).join(" • ")}</p>` : ""}`;
     list.appendChild(el);
@@ -916,7 +930,7 @@ function addExerciseEditor(exercise = {}) {
   const card = node.querySelector(".exercise-editor-card");
   card.dataset.exerciseId = exercise.id || crypto.randomUUID();
   card.dataset.libraryExerciseId = exercise.libraryExerciseId || "";
-  card.dataset.exerciseMetadata = JSON.stringify({description:exercise.description||"",muscle:exercise.muscle||exercise.primaryMuscle||"",primaryMuscle:exercise.primaryMuscle||exercise.muscle||"",secondaryMuscles:exercise.secondaryMuscles||[],muscleTags:exercise.muscleTags||[],equipment:exercise.equipment||[],exerciseType:exercise.exerciseType||"",movementPattern:exercise.movementPattern||"",laterality:exercise.laterality||"",substitutionFamily:exercise.substitutionFamily||"",weightEntryType:exercise.weightEntryType||"Total Weight",sourceType:exercise.sourceType||"custom",startingWeightRecommendation:exercise.startingWeightRecommendation||null,setup:exercise.setup||[],cues:exercise.cues||[]});
+  card.dataset.exerciseMetadata = JSON.stringify({description:exercise.description||"",muscle:exercise.muscle||exercise.primaryMuscle||"",primaryMuscle:exercise.primaryMuscle||exercise.muscle||"",secondaryMuscles:exercise.secondaryMuscles||[],muscleTags:exercise.muscleTags||[],equipment:exercise.equipment||[],exerciseType:exercise.exerciseType||"",movementPattern:exercise.movementPattern||"",laterality:exercise.laterality||"",substitutionFamily:exercise.substitutionFamily||"",weightEntryType:exercise.weightEntryType||"Total Weight",progressionMode:exercise.progressionMode||"manual",repUnit:exerciseRepUnit(exercise),sourceType:exercise.sourceType||"custom",startingWeightRecommendation:exercise.startingWeightRecommendation||null,setup:exercise.setup||[],cues:exercise.cues||[]});
   card.querySelector(".exercise-name").value = exercise.name || "";
   card.querySelector(".exercise-sets").value = exercise.sets ?? 3;
   card.querySelector(".exercise-min-reps").value = exercise.minReps ?? 8;
@@ -973,9 +987,9 @@ function validateWorkoutEditor() {
     FormValidation.required(result, `${prefix}.name`, name, "Enter an exercise name.");
     if (!name.trim()) result.summary.find(item => item.field === `${prefix}.name`).message = `Exercise ${exerciseNumber} needs a name.`;
     FormValidation.number(result, `${prefix}.sets`, card.querySelector(".exercise-sets").value, { label: "Sets", min: 1, max: 10, integer: true });
-    FormValidation.number(result, `${prefix}.minReps`, minReps, { label: "Minimum reps", min: 1, max: 50, integer: true });
-    FormValidation.number(result, `${prefix}.maxReps`, maxReps, { label: "Maximum reps", min: 1, max: 50, integer: true });
-    if (minReps !== "" && maxReps !== "") FormValidation.related(result, `${prefix}.maxReps`, Number(maxReps) >= Number(minReps), "Maximum reps must be greater than or equal to minimum reps.");
+    FormValidation.number(result, `${prefix}.minReps`, minReps, { label: "Minimum reps or seconds", min: 1, max: 600, integer: true });
+    FormValidation.number(result, `${prefix}.maxReps`, maxReps, { label: "Maximum reps or seconds", min: 1, max: 600, integer: true });
+    if (minReps !== "" && maxReps !== "") FormValidation.related(result, `${prefix}.maxReps`, Number(maxReps) >= Number(minReps), "Maximum reps or seconds must be greater than or equal to the minimum.");
     FormValidation.number(result, `${prefix}.startWeight`, card.querySelector(".exercise-weight").value, { label: "Starting weight", min: 0 });
     FormValidation.number(result, `${prefix}.targetRir`, card.querySelector(".exercise-target-rir").value, { label: "Target RIR", min: 0, max: 10, integer: true });
     FormValidation.number(result, `${prefix}.rest`, card.querySelector(".exercise-rest").value, { label: "Rest seconds", min: 0, integer: true });
@@ -1028,7 +1042,7 @@ function previewExerciseMarkup(exercise, index, originalExercise = null, adjustm
   return `<article class="preview-exercise">
     <h3>${index + 1}. ${escapeHtml(exercise.name)}</h3>
     <p><strong>Muscles:</strong> ${muscles.map(sorenessLabel).join(", ") || escapeHtml(exercise.muscle || "Other")}</p>
-    <p><strong>Plan:</strong> ${Number(exercise.sets || 0)} working sets • ${Number(exercise.minReps || 0)}–${Number(exercise.maxReps || 0)} reps • Target RIR ${Number(exercise.targetRir ?? 3)}</p>
+    <p><strong>Plan:</strong> ${Number(exercise.sets || 0)} working sets • ${Number(exercise.minReps || 0)}–${Number(exercise.maxReps || 0)} ${exerciseRepLabel(exercise)} • Target RIR ${Number(exercise.targetRir ?? 3)}</p>
     <p><strong>Rest:</strong> ${rest} seconds${weight ? ` • <strong>Recommended weight:</strong> ${weight} lb` : ""}</p>
     ${rec.note ? `<p><strong>Progression:</strong> ${escapeHtml(rec.note)}</p>` : ""}
     ${Number(rec.pain?.rating) >= 3 ? `<div class="preview-adjustment"><strong>Joint-pain recommendation:</strong> ${escapeHtml(rec.pain.note || `Pain rating ${rec.pain.rating}/5`)}${rec.pain.joints?.length ? `<br>Affected: ${rec.pain.joints.map(escapeHtml).join(", ")}` : ""}</div>` : ""}
@@ -1260,6 +1274,9 @@ function beginWorkout(id, sorenessRecord, context = pendingWorkoutContext, decis
         exerciseId: e.id,
         libraryExerciseId: e.libraryExerciseId || null,
         name: e.name,
+        weightEntryType: e.weightEntryType || definitionForExercise(e)?.defaults?.weightEntryType || "Total Weight",
+        progressionMode: e.progressionMode || definitionForExercise(e)?.progressionMode || "manual",
+        repUnit: exerciseRepUnit(e),
         weight: prescription?.weight ?? rec.weight,
         recommendation: rec.note,
         startingWeightRecommendation: structuredClone(starting),
@@ -1299,14 +1316,14 @@ function renderSession() {
     const starting = ex.startingWeightRecommendation || { label: "Saved starting weight", reason: "Saved with this workout.", calibrationRecommended: false };
     const substitutions = data.workouts.flatMap(w => w.exercises).filter(candidate => candidate.id !== ex.exerciseId && candidate.name !== ex.name && exerciseMuscles(candidate).some(muscle => exerciseMuscles(definition).includes(muscle))).filter((candidate,index,array)=>array.findIndex(item=>item.name===candidate.name)===index).slice(0,8);
     const sessionUnit=weightUnit(data.profile?.units);const entryLabel=weightEntryLabel(definition.weightEntryType||definition.defaults?.weightEntryType||"Total Weight");
-    const calibrationPanel = !ex.calibrationComplete && starting.calibrationRecommended ? `<div class="calibration-panel"><h4>Find Your Starting Weight</h4><p>${escapeHtml(starting.reason)}</p><p><strong>Suggested test weight:</strong> ${displayWeightValue(ex.weight,data.profile?.units)} ${sessionUnit} • ${definition.minReps}–${definition.maxReps} reps • target RIR ${ex.targetRir} • ${escapeHtml(entryLabel)}</p><div class="exercise-actions"><button class="secondary-button calibration-minus" type="button" aria-label="Decrease test weight">−</button><button class="primary-button start-calibration" type="button">${ex.calibrationStarted?"Calibration set started":"Start Calibration Set"}</button><button class="secondary-button calibration-plus" type="button" aria-label="Increase test weight">+</button></div>${ex.calibrationStarted&&!ex.calibrationMaxed?`<label>Repetitions completed<input class="calibration-reps" type="number" min="0" max="100" value="${definition.minReps}"></label><label>How many more good repetitions could you have completed?<select class="calibration-result"><option value="">Choose a result</option><option value="0-1">0 to 1</option><option value="2-3">2 to 3</option><option value="4-5">4 to 5</option><option value="6-plus">6 or more</option><option value="unsure">I am not sure</option><option value="unsafe">The weight felt unsafe</option><option value="joint-pain">I experienced joint pain</option></select></label><button class="secondary-button apply-calibration" type="button">Apply calibration result</button>`:""}${ex.calibrationMaxed?`<p class="recovery-warning">Three calibration attempts are complete. Use the current weight, enter a different weight manually, skip, or replace the exercise.</p><div class="exercise-actions"><button class="secondary-button accept-calibration" type="button">Use current weight</button><button class="secondary-button skip-calibration-exercise" type="button">Skip exercise</button></div>${substitutions.length?`<label>Replace exercise<select class="calibration-substitute"><option value="">Choose replacement</option>${substitutions.map(item=>`<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("")}</select></label>`:""}`:""}<button class="secondary-button skip-calibration" type="button">Use weight without calibration</button><p class="small-note">Attempt ${Math.min((ex.calibrationAttempts?.length||0)+1,3)} of 3. Calibration is an estimate, not a strength test.</p></div>` : "";
+    const calibrationPanel = !ex.calibrationComplete && starting.calibrationRecommended ? `<div class="calibration-panel"><h4>Find Your Starting Weight</h4><p>${escapeHtml(starting.reason)}</p><p><strong>Suggested test weight:</strong> ${displayWeightValue(ex.weight,data.profile?.units)} ${sessionUnit} • ${definition.minReps}–${definition.maxReps} ${exerciseRepLabel(ex)} • target RIR ${ex.targetRir} • ${escapeHtml(entryLabel)}</p><div class="exercise-actions"><button class="secondary-button calibration-minus" type="button" aria-label="Decrease test weight">−</button><button class="primary-button start-calibration" type="button">${ex.calibrationStarted?"Calibration set started":"Start Calibration Set"}</button><button class="secondary-button calibration-plus" type="button" aria-label="Increase test weight">+</button></div>${ex.calibrationStarted&&!ex.calibrationMaxed?`<label>Repetitions completed<input class="calibration-reps" type="number" min="0" max="100" value="${definition.minReps}"></label><label>How many more good repetitions could you have completed?<select class="calibration-result"><option value="">Choose a result</option><option value="0-1">0 to 1</option><option value="2-3">2 to 3</option><option value="4-5">4 to 5</option><option value="6-plus">6 or more</option><option value="unsure">I am not sure</option><option value="unsafe">The weight felt unsafe</option><option value="joint-pain">I experienced joint pain</option></select></label><button class="secondary-button apply-calibration" type="button">Apply calibration result</button>`:""}${ex.calibrationMaxed?`<p class="recovery-warning">Three calibration attempts are complete. Use the current weight, enter a different weight manually, skip, or replace the exercise.</p><div class="exercise-actions"><button class="secondary-button accept-calibration" type="button">Use current weight</button><button class="secondary-button skip-calibration-exercise" type="button">Skip exercise</button></div>${substitutions.length?`<label>Replace exercise<select class="calibration-substitute"><option value="">Choose replacement</option>${substitutions.map(item=>`<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("")}</select></label>`:""}`:""}<button class="secondary-button skip-calibration" type="button">Use weight without calibration</button><p class="small-note">Attempt ${Math.min((ex.calibrationAttempts?.length||0)+1,3)} of 3. Calibration is an estimate, not a strength test.</p></div>` : "";
     const futureWarning = painPlan.rating >= 3 ? `<div class="future-warning"><strong>${painPlan.rating >= 5 ? "Severe" : painPlan.rating === 4 ? "Significant" : "Noticeable"} joint pain was previously reported.</strong><p>${painPlan.rating >= 5 ? "Stop using this exercise if it reproduces the pain. Consider seeking evaluation from a qualified medical professional." : painPlan.rating === 4 ? "Consider replacing this exercise and avoiding movements that reproduce the pain." : "The next-workout load and RIR were adjusted. Review technique and consider a substitution."}</p>${painPlan.joints?.length ? `<p>Affected: ${painPlan.joints.map(escapeHtml).join(", ")}</p>` : ""}<div class="exercise-actions">${painPlan.rating===4?'<button class="secondary-button pain-use-reduced">Use reduced prescription</button>':""}<button class="secondary-button pain-keep-original">Keep original</button><button class="secondary-button pain-skip">Skip exercise</button></div>${substitutions.length ? `<label>Replacement<select class="pain-substitute"><option value="">Choose replacement</option>${substitutions.map(item=>`<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("")}</select></label>` : ""}</div>` : "";
     const card = document.createElement("article");
     card.className = "exercise-card";
     card.innerHTML = `
       <h3>${escapeHtml(ex.name)}</h3>
       ${futureWarning}
-      <p class="exercise-meta">${definition.minReps}-${definition.maxReps} reps • Target RIR ${ex.targetRir} • ${escapeHtml(ex.recommendation)}</p>
+      <p class="exercise-meta">${definition.minReps}-${definition.maxReps} ${exerciseRepLabel(ex)} • Target RIR ${ex.targetRir} • ${escapeHtml(ex.recommendation)}</p>
       <label>${escapeHtml(entryLabel)} (${sessionUnit})<input class="session-weight" type="number" step="${data.profile?.units==="metric"?.5:2.5}" min="0" value="${displayWeightValue(ex.weight,data.profile?.units)}"></label>
       ${calibrationPanel}
       <div class="set-list"></div>
@@ -1496,10 +1513,11 @@ document.querySelector("#closeExercisePreviewButton").onclick = closeExercisePre
 document.querySelector("#exercisePreviewDialog").addEventListener("cancel",event=>{event.preventDefault();closeExercisePreview();});
 document.querySelector("#exerciseLibrarySearch").oninput = event => {exerciseLibraryFilters.search=event.target.value;renderExerciseLibrary();};
 document.querySelector("#equipmentFilter").onchange = event => {exerciseLibraryFilters.equipment=event.target.value;renderExerciseLibrary();};
+document.querySelector("#loadTypeFilter").onchange = event => {exerciseLibraryFilters.loadType=event.target.value;renderExerciseLibrary();};
 document.querySelector("#exerciseTypeFilter").onchange = event => {exerciseLibraryFilters.type=event.target.value;renderExerciseLibrary();};
 document.querySelector("#favoritesFilterButton").onclick = () => {exerciseLibraryFilters.favorites=!exerciseLibraryFilters.favorites;renderExerciseLibrary();};
 document.querySelector("#recentFilterButton").onclick = () => {exerciseLibraryFilters.recent=!exerciseLibraryFilters.recent;renderExerciseLibrary();};
-document.querySelector("#clearExerciseFiltersButton").onclick = () => {exerciseLibraryFilters={search:"",muscle:"",equipment:"",type:"",favorites:false,recent:false};document.querySelector("#exerciseLibrarySearch").value="";document.querySelector("#equipmentFilter").value="";document.querySelector("#exerciseTypeFilter").value="";renderExerciseLibrary();};
+document.querySelector("#clearExerciseFiltersButton").onclick = () => {exerciseLibraryFilters={search:"",muscle:"",equipment:"",loadType:"",type:"",favorites:false,recent:false};document.querySelector("#exerciseLibrarySearch").value="";document.querySelector("#equipmentFilter").value="";document.querySelector("#loadTypeFilter").value="";document.querySelector("#exerciseTypeFilter").value="";renderExerciseLibrary();};
 document.querySelector("#createCustomExerciseButton").onclick = createCustomExercise;
 document.querySelector("#closeProgramPreviewButton").onclick = closeProgramPreview;
 document.querySelector("#backProgramPreviewButton").onclick = closeProgramPreview;
@@ -1674,7 +1692,7 @@ if ("serviceWorker" in navigator) {
     window.location.reload();
   });
   window.addEventListener("load", async () => {
-    const registration = await navigator.serviceWorker.register("service-worker.js");
+    const registration = await navigator.serviceWorker.register("service-worker.js?v=62");
     if (registration.waiting && navigator.serviceWorker.controller) {
       waitingServiceWorker = registration.waiting;
       renderUpdateNotice();
