@@ -8,6 +8,7 @@ function ensureMesocycleData() {
   if (!Array.isArray(data.mesocycles.drafts)) data.mesocycles.drafts = [];
   if (!Array.isArray(data.mesocycles.completed)) data.mesocycles.completed = [];
   if (!("active" in data.mesocycles)) data.mesocycles.active = null;
+  [data.mesocycles.active,...data.mesocycles.drafts,...data.mesocycles.completed].filter(Boolean).forEach(meso=>{meso.scheduleType||="weekly";meso.progress||={};meso.progress.completed||=[];meso.progress.skipped||=[];meso.progress.rescheduled||=[];});
 }
 
 function blankMesoExercise(name = "") {
@@ -41,7 +42,7 @@ function newMesocycle() {
   return {
     id: crypto.randomUUID(), name: "", startDate: today, trainingWeeks: 4, includeDeload: false,
     totalWeeks: 4, daysPerWeek: 3, schedule: defaultSchedule(3), status: "draft", createdAt: new Date().toISOString(),
-    progress: { week: 1, slot: 0, completed: [], skipped: [], needsWeekReview: false }
+    progress: { week: 1, slot: 0, completed: [], skipped: [], rescheduled: [], needsWeekReview: false }
   };
 }
 
@@ -348,7 +349,8 @@ function ensureWorkoutTemplate(workout) {
 function mesoTotalWorkouts(meso){return meso.totalWeeks*meso.schedule.length;}
 function mesoDoneCount(meso){return meso.progress.completed.length+meso.progress.skipped.length;}
 function mesoSlotResolved(meso,week,slot){return meso.progress.completed.some(item=>item.week===week&&item.slot===slot)||meso.progress.skipped.some(item=>item.week===week&&item.slot===slot);}
-function nextMesoSlot(meso){for(let week=1;week<=meso.totalWeeks;week++){for(let slot=0;slot<meso.schedule.length;slot++){if(!mesoSlotResolved(meso,week,slot))return{week,slot,plan:meso.schedule[slot]};}}return null;}
+function getCurrentActionableWorkout(meso,referenceDate=new Date()){return FleemanSchedule.getCurrentActionableWorkout(meso,referenceDate);}
+function nextMesoSlot(meso){return getCurrentActionableWorkout(meso);}
 function currentMesoPosition(meso){const next=nextMesoSlot(meso);return next?{week:next.week,slot:next.slot}:{week:meso.totalWeeks+1,slot:0};}
 function isDeloadWeek(meso,week){return meso.includeDeload&&week===meso.totalWeeks;}
 
@@ -376,17 +378,21 @@ function wireActiveMesoButtons(active){if(!active)return;document.querySelector(
 function renderMesoCollection(selector,items,type){const el=document.querySelector(selector);el.innerHTML=items.length?"":`<div class="panel"><p>No ${type} mesocycles.</p></div>`;items.forEach(m=>{const card=document.createElement("div");card.className="mesocycle-card";const summary=m.summary?`<p>${m.summary.completed}/${m.summary.planned} workouts • ${m.summary.percentage}% • ${m.summary.sets} sets • ${m.summary.improved} exercises improved${m.summary.pain.length?` • Pain flags: ${m.summary.pain.map(escapeHtml).join(", ")}`:""}</p>`:"";card.innerHTML=`<h3>${escapeHtml(m.name)}</h3><p>${m.totalWeeks} weeks • ${m.daysPerWeek} days/week</p>${summary}<div class="card-actions"><button class="secondary-button open">${type==="draft"?"Continue editing":"View"}</button>${type==="completed"?'<button class="secondary-button duplicate">Duplicate</button>':""}</div>`;card.querySelector(".open").onclick=()=>openMesocycleBuilder(m);card.querySelector(".duplicate")?.addEventListener("click",()=>duplicateMesocycle(m));el.appendChild(card);});}
 
 function workoutForMesoSlot(meso,next,persist=true){let workout=structuredClone(next.plan.workout);if(isDeloadWeek(meso,next.week)){workout.id=`${workout.id}-deload-${meso.id}`;workout.name=`Deload — ${workout.name}`;workout.exercises=workout.exercises.map(e=>({...e,id:`${e.id}-deload`,sets:Math.ceil(e.sets/2),startWeight:Math.round(e.startWeight*.85/2.5)*2.5,targetRir:Math.max(4,e.targetRir)}));}if(persist)ensureWorkoutTemplate(workout);return workout;}
-function previewNextMesoWorkout(meso,trigger){const next=nextMesoSlot(meso);if(!next)return;const workout=workoutForMesoSlot(meso,next,false);const deload=isDeloadWeek(meso,next.week);openWorkoutPreview(workout,{trigger,originalWorkout:deload?next.plan.workout:null,adjustmentReason:deload?"Deload week: sets and load are reduced and target RIR is increased.":"Current mesocycle prescription with progression and approved pain recommendations.",context:{mesocycleId:meso.id,week:next.week,slot:next.slot,plannedWorkoutId:next.plan.workout.id},startAction:()=>startNextMesoWorkout(meso)});}
-function startNextMesoWorkout(meso){const next=nextMesoSlot(meso);if(!next)return;const workout=workoutForMesoSlot(meso,next);startWorkout(workout.id,{mesocycleId:meso.id,week:next.week,slot:next.slot,plannedWorkoutId:next.plan.workout.id});}
+function mesoOccurrenceContext(meso,occurrence){return{mesocycleId:meso.id,scheduleType:meso.scheduleType||"weekly",week:occurrence.week,slot:occurrence.slot,plannedWorkoutId:occurrence.plan.workout.id,occurrenceId:occurrence.occurrenceId||`${occurrence.week}:${occurrence.slot}`,scheduledDate:occurrence.dateKey||FleemanSchedule.dateKey(FleemanSchedule.weeklyOccurrenceDate(meso,occurrence.week,occurrence.slot)),wasMissed:occurrence.status==="missed"};}
+function previewNextMesoWorkout(meso,trigger){const next=nextMesoSlot(meso);if(!next)return;const workout=workoutForMesoSlot(meso,next,false);const deload=isDeloadWeek(meso,next.week);openWorkoutPreview(workout,{trigger,originalWorkout:deload?next.plan.workout:null,adjustmentReason:deload?"Deload week: sets and load are reduced and target RIR is increased.":"Current mesocycle prescription with progression and approved pain recommendations.",context:mesoOccurrenceContext(meso,next),startAction:()=>startNextMesoWorkout(meso)});}
+function startNextMesoWorkout(meso){const next=nextMesoSlot(meso);if(!next)return;const workout=workoutForMesoSlot(meso,next);startWorkout(workout.id,mesoOccurrenceContext(meso,next));}
 function mesoSlotReference(meso,week,slot){const plan=meso.schedule[slot];return plan?{week,slot,plan}:null;}
-function startScheduledMesoWorkout(meso,week,slot){const scheduled=mesoSlotReference(meso,week,slot);if(!scheduled||mesoSlotResolved(meso,week,slot))return;const workout=workoutForMesoSlot(meso,scheduled);startWorkout(workout.id,{mesocycleId:meso.id,week,slot,plannedWorkoutId:scheduled.plan.workout.id});}
+function startScheduledMesoWorkout(meso,week,slot){const scheduled=mesoSlotReference(meso,week,slot);if(!scheduled||mesoSlotResolved(meso,week,slot))return;const date=FleemanSchedule.weeklyOccurrenceDate(meso,week,slot);Object.assign(scheduled,{scheduleType:"weekly",date,date,dateKey:FleemanSchedule.dateKey(date),occurrenceId:`${week}:${slot}`,status:FleemanSchedule.dateKey(date)<FleemanSchedule.dateKey(new Date())?"missed":"today"});const workout=workoutForMesoSlot(meso,scheduled);startWorkout(workout.id,mesoOccurrenceContext(meso,scheduled));}
 function previewScheduledMesoWorkout(meso,week,slot,trigger){const scheduled=mesoSlotReference(meso,week,slot);if(!scheduled)return;const workout=workoutForMesoSlot(meso,scheduled,false);const deload=isDeloadWeek(meso,week);openWorkoutPreview(workout,{trigger,originalWorkout:deload?scheduled.plan.workout:null,adjustmentReason:deload?"Deload week: sets and load are reduced and target RIR is increased.":"Today's active-mesocycle prescription.",context:{mesocycleId:meso.id,week,slot,plannedWorkoutId:scheduled.plan.workout.id},startAction:mesoSlotResolved(meso,week,slot)?null:()=>startScheduledMesoWorkout(meso,week,slot)});}
-function skipNextMeso(meso){const next=nextMesoSlot(meso);if(!next||!confirm(`Skip ${next.plan.workout.name}? It will remain recorded as missed.`))return;meso.progress.skipped.push({week:next.week,slot:next.slot,date:new Date().toISOString(),workoutName:next.plan.workout.name});afterMesoAdvance(meso,next.week);saveData();}
+function weeklySkippedHistoryEntry(meso,occurrence,entry){return{id:crypto.randomUUID(),type:"skipped-workout",date:entry.date,workoutName:entry.workoutName,exercises:[],scheduleStatus:"skipped",skipReason:entry.reason,mesocycle:mesoOccurrenceContext(meso,occurrence)};}
+function skipMesoOccurrence(meso,occurrence,reason="Skipped by user"){if(!occurrence)return false;const before=meso.progress.skipped.length;const entry=FleemanSchedule.markOccurrenceSkipped(meso,occurrence,new Date(),reason);if(meso.progress.skipped.length===before)return false;data.history.unshift(weeklySkippedHistoryEntry(meso,occurrence,entry));afterMesoAdvance(meso,occurrence.week);saveData();return true;}
+function skipNextMeso(meso){const next=nextMesoSlot(meso);if(!next||!confirm(`Skip ${next.plan.workout.name}? This scheduled occurrence will remain recorded as skipped.`))return;skipMesoOccurrence(meso,next);}
 function afterMesoAdvance(meso,oldWeek){const next=nextMesoSlot(meso);if(next&&next.week>oldWeek)meso.progress.needsWeekReview=true;}
 function repeatPreviousMesoWeek(meso){const current=currentMesoPosition(meso).week,previous=Math.max(1,current-1);meso.progress.completed=meso.progress.completed.filter(item=>item.week!==previous);meso.progress.skipped=meso.progress.skipped.filter(item=>item.week!==previous);meso.progress.needsWeekReview=false;saveData();}
 function onMesocycleWorkoutFinished(session){const ref=session.mesocycle;if(!ref||!data.mesocycles.active||data.mesocycles.active.id!==ref.mesocycleId)return;const meso=data.mesocycles.active;if(!meso.progress.completed.some(x=>x.week===ref.week&&x.slot===ref.slot))meso.progress.completed.push({week:ref.week,slot:ref.slot,date:session.date,sessionDate:session.date,workoutName:session.workoutName});afterMesoAdvance(meso,ref.week);}
 function endMesocycle(meso){if(!confirm("End this mesocycle early? Workout history will be kept."))return;meso.status="ended";meso.endedAt=new Date().toISOString();data.mesocycles.completed.unshift(structuredClone(meso));data.mesocycles.active=null;saveData();}
-function rescheduleNextMeso(meso){const next=nextMesoSlot(meso);if(!next)return;next.plan.dayIndex=(new Date().getDay()+1)%7;saveData();}
+function rescheduleMesoOccurrence(meso,occurrence){if(!occurrence)return;const tomorrow=new Date();tomorrow.setDate(tomorrow.getDate()+1);const selected=prompt("Reschedule this workout to YYYY-MM-DD.",FleemanSchedule.dateKey(tomorrow));if(selected==null)return;const date=FleemanSchedule.localDate(selected);if(!date||FleemanSchedule.dateKey(date)!==selected)return alert("Enter a valid date in YYYY-MM-DD format.");meso.progress.rescheduled||=[];meso.progress.rescheduled=meso.progress.rescheduled.filter(item=>!(Number(item.week)===Number(occurrence.week)&&Number(item.slot)===Number(occurrence.slot)));meso.progress.rescheduled.push({week:occurrence.week,slot:occurrence.slot,date:selected,updatedAt:new Date().toISOString()});saveData();}
+function rescheduleNextMeso(meso){rescheduleMesoOccurrence(meso,nextMesoSlot(meso));}
 function moveMesoForward(meso){meso.schedule.forEach(slot=>slot.dayIndex=(slot.dayIndex+1)%7);const date=new Date(meso.startDate+"T12:00:00");date.setDate(date.getDate()+1);meso.startDate=date.toISOString().slice(0,10);saveData();}
 function returnMesoToDraft(meso){if(!confirm("Return this mesocycle to drafts? Completed workout history will be kept."))return;meso.status="draft";data.mesocycles.drafts.unshift(structuredClone(meso));data.mesocycles.active=null;saveData();}
 function completeMesocycle(meso){meso.status="completed";meso.completedAt=new Date().toISOString();meso.summary=buildMesoSummary(meso);data.mesocycles.completed.unshift(structuredClone(meso));data.mesocycles.active=null;saveData();alert(`Mesocycle complete: ${meso.summary.completed} of ${meso.summary.planned} workouts completed.`);}
@@ -444,6 +450,44 @@ function deleteMesocycleDraft(meso){
   if(!confirm(`Delete draft ${meso.name}? Workout history and other mesocycles will remain.`))return;
   data.mesocycles.drafts=data.mesocycles.drafts.filter(item=>item.id!==meso.id);saveData();
 }
+
+function weeklyHomeOccurrenceButtons(){
+  const actions=document.querySelector("#homeView .hero-actions");
+  let skip=document.querySelector("#skipHomeMesoDay"),reschedule=document.querySelector("#rescheduleHomeMesoDay");
+  if(!skip){skip=document.createElement("button");skip.id="skipHomeMesoDay";skip.type="button";skip.className="secondary-button hidden";skip.textContent="Skip Day";actions.appendChild(skip);}
+  if(!reschedule){reschedule=document.createElement("button");reschedule.id="rescheduleHomeMesoDay";reschedule.type="button";reschedule.className="secondary-button hidden";reschedule.textContent="Reschedule";actions.appendChild(reschedule);}
+  return{actions,skip,reschedule};
+}
+
+function resetWeeklyHomeOccurrenceButtons(){const controls=weeklyHomeOccurrenceButtons();controls.actions.classList.remove("has-occurrence-actions");controls.skip.classList.add("hidden");controls.reschedule.classList.add("hidden");controls.skip.onclick=null;controls.reschedule.onclick=null;document.querySelector("#homeView .hero-card")?.classList.remove("missed-workout");return controls;}
+
+function weeklyOccurrenceDateText(occurrence){if(!occurrence?.date)return"Date unavailable";return occurrence.date.toLocaleDateString(undefined,{weekday:"long",month:"short",day:"numeric"});}
+
+function renderWeeklyMesocycleToday(){
+  ensureMesocycleData();
+  const meso=data.mesocycles.active,button=document.querySelector("#startWorkoutButton"),preview=document.querySelector("#previewTodayWorkoutButton"),paused=savedWorkoutInProgress(),hero=document.querySelector("#homeView .hero-card"),controls=resetWeeklyHomeOccurrenceButtons();
+  if(paused){const completed=paused.exercises.reduce((sum,exercise)=>sum+exercise.sets.filter(set=>set.done).length,0),total=paused.exercises.reduce((sum,exercise)=>sum+exercise.sets.length,0);hero.querySelector(".eyebrow").textContent="WORKOUT IN PROGRESS";document.querySelector("#todayWorkoutName").textContent=workoutSplitLabel(paused,paused.workoutName);document.querySelector("#todayWorkoutSummary").textContent=`${paused.workoutName} | ${completed} of ${total} working sets completed`;button.textContent="Resume workout";button.onclick=resumeSavedWorkout;preview.classList.add("hidden");return;}
+  if(!meso){button.onclick=()=>{if(data.selectedWorkoutId)startWorkout(data.selectedWorkoutId);else document.querySelector('[data-view="builderView"]').click();};return;}
+  const occurrence=getCurrentActionableWorkout(meso);
+  if(!occurrence){hero.querySelector(".eyebrow").textContent="MESOCYCLE COMPLETE";document.querySelector("#todayWorkoutName").textContent=meso.name;document.querySelector("#todayWorkoutSummary").textContent="Open Build to review and complete this mesocycle.";button.textContent="Open Build";button.onclick=()=>document.querySelector('[data-view="programsView"]').click();preview.classList.add("hidden");return;}
+  if(meso.progress.needsWeekReview){hero.querySelector(".eyebrow").textContent=`${meso.name.toUpperCase()} | WEEK ${occurrence.week}`;document.querySelector("#todayWorkoutName").textContent=`Week ${occurrence.week} Review`;document.querySelector("#todayWorkoutSummary").textContent="Approve the weekly review before starting this week's workouts.";button.textContent="Open Weekly Review";button.onclick=()=>document.querySelector('[data-view="programsView"]').click();preview.classList.add("hidden");return;}
+  const label=workoutSplitLabel(occurrence.plan.workout,occurrence.plan.workout.name||"TRAINING DAY");
+  const scheduled=weeklyOccurrenceDateText(occurrence),trainingContext=`Training Day ${occurrence.slot+1} | Week ${occurrence.week}`;
+  hero.querySelector(".eyebrow").textContent=occurrence.status==="missed"?"MISSED WORKOUT":occurrence.status==="today"?"TODAY'S WORKOUT":"UPCOMING WORKOUT";
+  hero.classList.toggle("missed-workout",occurrence.status==="missed");
+  document.querySelector("#todayWorkoutName").textContent=label;
+  document.querySelector("#todayWorkoutSummary").textContent=`${trainingContext} | Scheduled ${scheduled}${occurrence.plan.workout.name&&occurrence.plan.workout.name.toUpperCase()!==label?` | ${occurrence.plan.workout.name}`:""}`;
+  button.textContent=occurrence.status==="missed"?"Do This Workout":occurrence.status==="today"?"Start Workout":"Do This Workout Early";
+  button.onclick=()=>startScheduledMesoWorkout(meso,occurrence.week,occurrence.slot);
+  preview.classList.remove("hidden");preview.onclick=event=>previewScheduledMesoWorkout(meso,occurrence.week,occurrence.slot,event.currentTarget);
+  if(occurrence.status==="missed"){
+    controls.actions.classList.add("has-occurrence-actions");controls.skip.classList.remove("hidden");controls.reschedule.classList.remove("hidden");
+    controls.skip.onclick=()=>skipMesoOccurrence(meso,occurrence);
+    controls.reschedule.onclick=()=>rescheduleMesoOccurrence(meso,occurrence);
+  }
+}
+
+renderMesocycleToday=renderWeeklyMesocycleToday;
 
 document.querySelector("#newMesocycleButton").onclick=()=>{const choice=document.querySelector("#buildChoiceTitle");choice.tabIndex=-1;choice.scrollIntoView({behavior:"smooth",block:"center"});choice.focus({preventScroll:true});};
 document.querySelector("#closeMesocycleButton").onclick=()=>{if(confirm("Close the builder? Save as a draft first if you want to keep these changes."))document.querySelector("#mesocycleDialog").close();};

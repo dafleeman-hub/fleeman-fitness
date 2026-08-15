@@ -1192,3 +1192,112 @@ dialog { width: min(920px, 100%); }
   .mobile-dock { width: calc(100% - 10px); bottom: max(5px, env(safe-area-inset-bottom)); }
   .dock-tab small { font-size: .55rem; letter-spacing: .015em; }
 }
+
+/* Actionable schedule states and attention-first rest timer. */
+.dashboard-hero.missed-workout {
+  border-color: #ff7043;
+  box-shadow: inset 4px 0 #ff4d00, 0 16px 42px rgba(0,0,0,.32);
+}
+.hero-actions.has-occurrence-actions { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.hero-actions.has-occurrence-actions #startWorkoutButton { grid-column: 1 / -1; }
+.hero-actions.has-occurrence-actions button { min-width: 0; white-space: normal; }
+
+.rest-timer-overlay {
+  position: fixed;
+  z-index: 90;
+  top: var(--rest-viewport-top, 0px);
+  left: 0;
+  width: 100vw;
+  height: var(--rest-viewport-height, 100dvh);
+  display: grid;
+  place-items: center;
+  padding: max(14px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
+  pointer-events: none;
+}
+.rest-timer-overlay-card {
+  position: relative;
+  pointer-events: auto;
+  width: min(390px, calc(100vw - 28px));
+  max-height: calc(var(--rest-viewport-height, 100dvh) - 28px);
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: rgba(12,17,24,.985);
+  box-shadow: 0 24px 70px rgba(0,0,0,.62), 0 0 0 1px rgba(255,90,10,.16);
+}
+.rest-timer-overlay.complete .rest-timer-overlay-card { border-color: var(--success); }
+.rest-timer-collapse {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 50%;
+  color: var(--text);
+  background: var(--panel-2);
+}
+.rest-timer-overlay #restTimerValue {
+  display: block;
+  margin: 5px 0 6px;
+  font-family: var(--heading-font);
+  font-size: clamp(3rem,15vw,4.7rem);
+  line-height: 1;
+  letter-spacing: .025em;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.rest-timer-context { margin: 0 0 14px; color: var(--muted); }
+.rest-timer-next {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 15px;
+  padding: 12px;
+  border-left: 3px solid var(--accent);
+  background: #09101a;
+}
+.rest-timer-next > span { color: var(--accent); font-size: .72rem; font-weight: 800; letter-spacing: .11em; }
+.rest-timer-next strong { font-size: 1.1rem; }
+.rest-timer-next small { color: var(--muted); }
+.rest-timer-overlay .rest-timer-actions { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 7px; overflow: visible; }
+.rest-timer-overlay .rest-timer-actions button { flex: 1 1 92px; min-height: 44px; }
+.rest-timer-mini {
+  position: fixed;
+  z-index: 91;
+  left: 50%;
+  bottom: calc(var(--rest-keyboard-offset, 0px) + 82px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: auto auto minmax(0,1fr);
+  align-items: center;
+  gap: 7px;
+  width: min(430px, calc(100vw - 20px));
+  min-height: 48px;
+  padding: 8px 13px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--text);
+  background: rgba(10,15,22,.98);
+  box-shadow: 0 14px 34px rgba(0,0,0,.52);
+  text-align: left;
+}
+.rest-timer-mini > span { color: var(--accent); font-size: .72rem; font-weight: 800; letter-spacing: .09em; }
+.rest-timer-mini > strong { font-size: 1.14rem; font-variant-numeric: tabular-nums; }
+.rest-timer-mini > small { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.rest-timer-mini.complete { border-color: var(--success); }
+
+@media (min-width: 760px) {
+  .rest-timer-mini { bottom: calc(var(--rest-keyboard-offset, 0px) + 24px + env(safe-area-inset-bottom)); }
+}
+@media (max-width: 430px) {
+  .hero-actions.has-occurrence-actions { grid-template-columns: 1fr; }
+  .hero-actions.has-occurrence-actions #startWorkoutButton { grid-column: auto; }
+  .rest-timer-overlay-card { padding: 18px 14px 14px; }
+  .rest-timer-overlay .rest-timer-actions button { flex-basis: calc(50% - 7px); }
+}
+@media (max-width: 340px) {
+  .rest-timer-overlay-card { width: calc(100vw - 16px); }
+  .rest-timer-overlay #restTimerValue { font-size: 2.8rem; }
+  .rest-timer-mini { width: calc(100vw - 10px); padding-inline: 10px; }
+}

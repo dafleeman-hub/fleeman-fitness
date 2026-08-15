@@ -1,6 +1,6 @@
 
 const STORAGE_KEY = "fleemanFitnessDataV1";
-const APP_VERSION = "1.4.0-beta";
+const APP_VERSION = "1.5.0-beta";
 let previewReturnFocus = null;
 let previewScrollPosition = 0;
 const defaultData = {
@@ -240,6 +240,7 @@ function jointPainPlanFor(exerciseId) {
 }
 
 function definitionForExercise(exercise){return allExerciseDefinitions().find(item=>item.id===exercise.libraryExerciseId)||allExerciseDefinitions().find(item=>normalizedExerciseName(item.name)===normalizedExerciseName(exercise.name));}
+function workoutSplitLabel(workout,fallback="TRAINING DAY"){const enriched={...(workout||{}),exercises:(workout?.exercises||[]).map(exercise=>({...definitionForExercise(exercise),...exercise,sets:Array.isArray(exercise.sets)?exercise.sets.length:exercise.sets}))};return FleemanWorkoutClassifier.workoutDisplayLabel(enriched,fallback);}
 function recommendationResult(weight,label,reason,confidence,calibrationRecommended=false){return{weight:Math.max(0,Number(weight)||0),label,reason,confidence,calibrationRecommended};}
 
 function hasPriorExerciseUse(exercise) {
@@ -395,7 +396,7 @@ function dashboardWorkoutContext() {
   const meso = data.mesocycles?.active;
   if (meso && typeof nextMesoSlot === "function") {
     const next = nextMesoSlot(meso);
-    if (next) return { workout: next.plan.workout, paused: null, context: { mesocycleId: meso.id, week: next.week, slot: next.slot } };
+    if (next) return { workout: next.plan.workout, paused: null, context: typeof mesoOccurrenceContext==="function"?mesoOccurrenceContext(meso,next):{ mesocycleId: meso.id, week: next.week, slot: next.slot } };
   }
   const selected = data.workouts.find(workout => workout.id === data.selectedWorkoutId) || null;
   return { workout: selected, paused: null, context: null };
@@ -1692,7 +1693,7 @@ if ("serviceWorker" in navigator) {
     window.location.reload();
   });
   window.addEventListener("load", async () => {
-    const registration = await navigator.serviceWorker.register("service-worker.js?v=62");
+    const registration = await navigator.serviceWorker.register("service-worker.js?v=63");
     if (registration.waiting && navigator.serviceWorker.controller) {
       waitingServiceWorker = registration.waiting;
       renderUpdateNotice();

@@ -854,9 +854,9 @@ activeMesocycleMarkup = function (mesocycle) {
   if (!next) return `<div class="mesocycle-card"><p class="eyebrow">ROLLING CYCLE • READY TO COMPLETE</p><h2>${escapeHtml(mesocycle.name)}</h2><p>${done} of ${total} numbered cycle days resolved.</p><div class="progress-track"><div class="progress-fill" style="width:100%"></div></div><button id="completeMeso" class="primary-button">View summary and complete</button></div>`;
   const totalCycles = rollingTotalCycles(mesocycle);
   const phase = next.phase === "deload" ? "Deload Cycle" : `Cycle ${next.cycle} of ${mesocycle.normalCycles}`;
-  const title = next.plan.dayType === "rest" ? next.plan.restTitle || "Rest Day" : next.plan.workout.name;
+  const title = next.plan.dayType === "rest" ? next.plan.restTitle || "Rest Day" : workoutSplitLabel(next.plan.workout,next.plan.workout.name);
   const rescheduled = mesocycle.progress.rescheduled.find(item => rollingEntryMatches(item, next.cycle, next.slot));
-  const mainAction = paused ? '<button id="startNextMeso" class="primary-button">Resume workout</button>' : next.plan.dayType === "rest" ? '<button id="completeRollingRest" class="primary-button">Complete Rest Day</button>' : `<button id="startNextMeso" class="primary-button">${rollingDayIsOverdue(mesocycle, next) ? "Complete It Today" : "Start Workout"}</button>`;
+  const mainAction = paused ? '<button id="startNextMeso" class="primary-button">Resume workout</button>' : next.plan.dayType === "rest" ? '<button id="completeRollingRest" class="primary-button">Complete Rest Day</button>' : '<button id="startNextMeso" class="primary-button">Start Workout</button>';
   return `<div class="mesocycle-card"><p class="eyebrow">ACTIVE MESOCYCLE • ROLLING CYCLE</p><h2>${escapeHtml(mesocycle.name)}</h2><p>${phase} • Day ${next.day} of ${mesocycle.cycleLength}</p><div class="progress-track"><div class="progress-fill" style="width:${percentage}%"></div></div><p>${done} cycle days resolved • ${total - done} remaining</p><h3>Next: ${escapeHtml(title)}</h3>${rescheduled ? `<p class="small-note">Chosen date: ${new Date(`${rescheduled.date}T12:00:00`).toLocaleDateString()}</p>` : ""}${mainAction}<div class="card-actions mesocycle-actions" aria-label="Rolling Cycle actions">${next.plan.dayType === "training" ? '<button id="previewNextMeso" class="secondary-button">Preview Workout</button><button id="keepRollingNext" class="secondary-button">Keep It as Next</button><button id="skipMesoWorkout" class="secondary-button">Skip This Cycle Day</button><button id="rescheduleMesoWorkout" class="secondary-button">Reschedule to a Chosen Date</button>' : '<button id="advanceRollingEarly" class="secondary-button">Move to Next Cycle Day Early</button>'}<button id="addRollingRest" class="secondary-button">Add Extra Rest Day</button><button id="viewMeso" class="secondary-button">View Cycle</button><button id="editFutureMeso" class="secondary-button">Edit Future Cycle</button><button id="draftActiveMeso" class="secondary-button">Return to Draft</button><button id="endMeso" class="danger-button">End Mesocycle</button></div></div>`;
 };
 
@@ -981,7 +981,7 @@ renderMesocycleToday = function () {
     const completed = paused.exercises.reduce((sum, exercise) => sum + exercise.sets.filter(set => set.done).length, 0);
     const total = paused.exercises.reduce((sum, exercise) => sum + exercise.sets.length, 0);
     hero.querySelector(".eyebrow").textContent = "WORKOUT IN PROGRESS • ROLLING CYCLE";
-    document.querySelector("#todayWorkoutName").textContent = paused.workoutName;
+    document.querySelector("#todayWorkoutName").textContent = workoutSplitLabel(paused,paused.workoutName);
     document.querySelector("#todayWorkoutSummary").textContent = `${completed} of ${total} working sets completed • Cycle ${paused.mesocycle?.cycle || paused.mesocycle?.week}, Day ${paused.mesocycle?.cycleDay || Number(paused.mesocycle?.slot) + 1}`;
     button.textContent = "Resume workout";
     button.onclick = resumeSavedWorkout;
@@ -1018,9 +1018,10 @@ renderMesocycleToday = function () {
     previewButton.classList.add("hidden");
     return;
   }
-  document.querySelector("#todayWorkoutName").textContent = next.plan.workout.name;
-  document.querySelector("#todayWorkoutSummary").textContent = `Cycle ${next.cycle} • Day ${next.day} of ${mesocycle.cycleLength} • ${next.plan.workout.exercises.length} exercises`;
-  button.textContent = rollingDayIsOverdue(mesocycle, next) ? "Complete It Today" : "Start Workout";
+  const splitLabel=workoutSplitLabel(next.plan.workout,next.plan.workout.name);
+  document.querySelector("#todayWorkoutName").textContent = splitLabel;
+  document.querySelector("#todayWorkoutSummary").textContent = `Cycle ${next.cycle} • Day ${next.day} of ${mesocycle.cycleLength} • ${next.plan.workout.exercises.length} exercises${next.plan.workout.name.toUpperCase()!==splitLabel?` • ${next.plan.workout.name}`:""}`;
+  button.textContent = "Start Workout";
   button.onclick = () => startNextMesoWorkout(mesocycle);
   previewButton.classList.remove("hidden");
   previewButton.onclick = event => previewNextMesoWorkout(mesocycle, event.currentTarget);
