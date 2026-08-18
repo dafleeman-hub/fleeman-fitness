@@ -1,6 +1,6 @@
 
-const CACHE = "fleeman-fitness-v63";
-const CORE_ASSETS = ["./", "./index.html", "./styles.css?v=63", "./exercise-library.js?v=63", "./bodyweight-exercises.js?v=63", "./workout-classifier.js?v=63", "./schedule-utils.js?v=63", "./program-templates.js?v=63", "./starting-weight-rules.js?v=63", "./validation.js?v=63", "./app.js?v=63", "./live-workout.js?v=63", "./mesocycles.js?v=63", "./rolling-cycles.js?v=63", "./builder-reliability.js?v=63", "./fitness-enhancements.js?v=63"];
+const CACHE = "fleeman-fitness-v70";
+const CORE_ASSETS = ["./", "./index.html", "./styles.css?v=70", "./exercise-library.js?v=70", "./bodyweight-exercises.js?v=70", "./workout-classifier.js?v=70", "./schedule-utils.js?v=70", "./active-workout-utils.js?v=70", "./program-templates.js?v=70", "./starting-weight-rules.js?v=70", "./validation.js?v=70", "./app.js?v=70", "./live-workout.js?v=70", "./mesocycles.js?v=70", "./rolling-cycles.js?v=70", "./builder-reliability.js?v=70", "./fitness-enhancements.js?v=70"];
 const OPTIONAL_ASSETS = ["./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png"];
 self.addEventListener("install", event => event.waitUntil(
   caches.open(CACHE).then(async cache => {

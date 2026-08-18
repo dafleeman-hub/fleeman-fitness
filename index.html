@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Fleeman Fit" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=63" />
+  <link rel="stylesheet" href="styles.css?v=70" />
   <title>Fleeman Fitness</title>
 </head>
 <body>
@@ -382,6 +382,27 @@
     </div>
   </dialog>
 
+  <dialog id="activeSwapDialog" aria-labelledby="activeSwapTitle">
+    <div class="dialog-card active-swap-dialog-card">
+      <div class="dialog-header sticky">
+        <div><p class="eyebrow">EXERCISE OPTIONS</p><h2 id="activeSwapTitle">Swap Exercise</h2></div>
+        <button id="closeActiveSwapButton" class="icon-button" type="button" aria-label="Cancel exercise swap">×</button>
+      </div>
+      <p id="activeSwapContext" class="small-note"></p>
+      <label>Replacement scope
+        <select id="activeSwapScope">
+          <option value="today">Today only</option>
+          <option value="mesocycle">Rest of active mesocycle</option>
+        </select>
+      </label>
+      <label>Search the exercise library
+        <input id="activeSwapSearch" type="search" placeholder="Search exercise, muscle, equipment, or movement" autocomplete="off">
+      </label>
+      <div class="swap-results-heading"><h3>Recommended replacements</h3><button id="showAllSwapExercises" class="secondary-button compact" type="button">Browse all exercises</button></div>
+      <div id="activeSwapResults" class="active-swap-results" aria-live="polite"></div>
+    </div>
+  </dialog>
+
   <nav class="mobile-dock" aria-label="Mobile navigation">
     <button class="dock-tab active" data-dock-view="homeView" type="button"><span aria-hidden="true">⌂</span><small>Home</small></button>
     <button class="dock-tab" data-dock-view="builderView" type="button"><span aria-hidden="true">▦</span><small>Library</small></button>
@@ -408,18 +429,19 @@
     </div>
   </template>
 
-  <script src="exercise-library.js?v=63"></script>
-  <script src="bodyweight-exercises.js?v=63"></script>
-  <script src="workout-classifier.js?v=63"></script>
-  <script src="schedule-utils.js?v=63"></script>
-  <script src="program-templates.js?v=63"></script>
-  <script src="starting-weight-rules.js?v=63"></script>
-  <script src="validation.js?v=63"></script>
-  <script src="app.js?v=63"></script>
-  <script src="live-workout.js?v=63"></script>
-  <script src="mesocycles.js?v=63"></script>
-  <script src="rolling-cycles.js?v=63"></script>
-  <script src="builder-reliability.js?v=63"></script>
-  <script src="fitness-enhancements.js?v=63"></script>
+  <script src="exercise-library.js?v=70"></script>
+  <script src="bodyweight-exercises.js?v=70"></script>
+  <script src="workout-classifier.js?v=70"></script>
+  <script src="schedule-utils.js?v=70"></script>
+  <script src="active-workout-utils.js?v=70"></script>
+  <script src="program-templates.js?v=70"></script>
+  <script src="starting-weight-rules.js?v=70"></script>
+  <script src="validation.js?v=70"></script>
+  <script src="app.js?v=70"></script>
+  <script src="live-workout.js?v=70"></script>
+  <script src="mesocycles.js?v=70"></script>
+  <script src="rolling-cycles.js?v=70"></script>
+  <script src="builder-reliability.js?v=70"></script>
+  <script src="fitness-enhancements.js?v=70"></script>
 </body>
 </html>

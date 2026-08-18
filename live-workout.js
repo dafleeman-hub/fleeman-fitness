@@ -4,6 +4,9 @@ let liveWorkoutSaveTimer = null;
 let liveWorkoutClock = null;
 let pendingLiveWorkoutStart = null;
 let exerciseHistoryReturnFocus = null;
+let activeSwapExerciseIndex = null;
+let activeSwapReturnFocus = null;
+let activeSwapShowAll = false;
 
 const baseBeginWorkout = beginWorkout;
 const baseRenderSession = renderSession;
@@ -41,6 +44,10 @@ function normalizeActiveWorkoutSession(session) {
     if (!Object.hasOwn(exercise.jointPain, "rating")) exercise.jointPain.rating = null;
     exercise.jointPain.joints ||= [];
     exercise.jointPainAnswered = Boolean(exercise.jointPainAnswered);
+    if (exercise.substitution && !exercise.substitution.fromWeightEntryType) {
+      const originalDefinition = allExerciseDefinitions().find(item=>normalizedExerciseName(item.name)===normalizedExerciseName(exercise.substitution.from));
+      exercise.substitution.fromWeightEntryType = originalDefinition?.defaults?.weightEntryType || "Total Weight";
+    }
     const continuingCalibration = Boolean(exercise.calibrationStarted || exercise.calibrationAttempts?.length);
     const calibrationAllowed = Boolean(exercise.startingWeightRecommendation?.calibrationRecommended) &&
       (continuingCalibration || startingWeightCalibrationEligible(exercise, session.mesocycle));
@@ -219,7 +226,9 @@ function exerciseAdjustmentMarkup(exercise) {
   if (!adjusted) return "";
   const sorenessChange = currentSession.soreness?.changes?.find(change => change.exerciseId === exercise.exerciseId);
   const reason = sorenessChange ? `Adjusted for ${sorenessLabel(sorenessChange.causedBy)} soreness` : exercise.priorPainPlan?.rating >= 3 ? "Adjusted for previous joint pain" : currentSession.mesocycle?.isDeload ? "Adjusted for deload week" : "Adjusted prescription";
-  return `<section class="adjustment-summary"><strong>${escapeHtml(reason)}</strong><div class="adjustment-columns"><p><span>Original</span>${original.sets} sets at ${displayWeightValue(original.weight,data.profile?.units)} ${weightUnit(data.profile?.units)}<br>Target RIR ${original.targetRir}</p><p><span>Today</span>${exercise.sets.length} sets at ${displayWeightValue(exercise.weight,data.profile?.units)} ${weightUnit(data.profile?.units)}<br>Target RIR ${exercise.targetRir}</p></div><p class="small-note">${escapeHtml(exercise.recommendation || "Prescription adjusted for this session.")}</p></section>`;
+  const originalLoad=workoutLoadText({weightEntryType:exercise.substitution?.fromWeightEntryType||exercise.weightEntryType},original.weight);
+  const todayLoad=workoutLoadText(exercise,exercise.weight);
+  return `<section class="adjustment-summary"><strong>${escapeHtml(reason)}</strong><div class="adjustment-columns"><p><span>Original</span>${original.sets} sets • ${escapeHtml(originalLoad)}<br>Target RIR ${original.targetRir}</p><p><span>Today</span>${exercise.sets.length} sets • ${escapeHtml(todayLoad)}<br>Target RIR ${exercise.targetRir}</p></div><p class="small-note">${escapeHtml(exercise.recommendation || "Prescription adjusted for this session.")}</p></section>`;
 }
 
 function collapsedExerciseSummary(exercise) {
@@ -246,34 +255,84 @@ function sessionExerciseDefinition(exercise) {
 
 function swapExerciseInSession(exerciseIndex, replacementDefinition, scope) {
   const exercise = currentSession.exercises[exerciseIndex];
-  if (exercise.sets.some(set=>set.done) && !confirm("This exercise has completed sets. Keep those logged sets and replace the remaining work?")) return;
-  const oldId = exercise.exerciseId;
-  const oldLibraryId = exercise.libraryExerciseId;
-  const oldName = exercise.name;
+  if (!exercise) return false;
+  const originalReference = { exerciseId: exercise.exerciseId, libraryExerciseId: exercise.libraryExerciseId };
   const replacement = exerciseDefinitionToPrescription(replacementDefinition);
   const recommendation = recommendationFor(replacement);
-  exercise.exerciseId = replacement.id;
-  exercise.libraryExerciseId = replacement.libraryExerciseId;
-  exercise.sessionPrescription = structuredClone(replacement);
-  exercise.name = replacement.name;
-  exercise.targetRir = replacement.targetRir;
-  exercise.weight = recommendation.weight;
-  exercise.recommendation = recommendation.note;
-  exercise.substitution = { from: oldName, to: replacement.name, scope, date: new Date().toISOString() };
-  exercise.sets.forEach(set => { if (!set.done) { set.weight = recommendation.weight; set.reps = replacement.minReps; set.manuallyEditedWeight=false; set.manuallyEditedReps=false; } });
-  if (scope === "permanent") {
-    const sourceWorkout = data.workouts.find(item=>item.id===currentSession.workoutId);
-    const position = sourceWorkout?.exercises.findIndex(item=>item.id===oldId);
-    if (position >= 0) sourceWorkout.exercises[position] = replacement;
-  }
-  if (scope === "mesocycle" && data.mesocycles?.active) {
-    data.mesocycles.active.schedule.forEach(slot => slot.workout.exercises.forEach((item,index) => {
-      if (item.id === oldId || (oldLibraryId && item.libraryExerciseId === oldLibraryId)) slot.workout.exercises[index] = { ...structuredClone(replacement), id:item.id };
-    }));
+  recommendation.starting ||= startingWeightRecommendation(replacement);
+  const result = FleemanActiveWorkout.applyExerciseSwap(currentSession, exerciseIndex, replacement, recommendation, scope);
+  currentSession.exercises.forEach((item,index)=>item.expanded=index===currentSession.currentExerciseIndex);
+  if (scope === "mesocycle" && data.mesocycles?.active?.id === currentSession.mesocycle?.mesocycleId) {
+    FleemanActiveWorkout.replaceMesocycleExercise(data.mesocycles.active, originalReference, replacement);
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   persistActiveWorkout(true);
   renderSession();
+  return Boolean(result);
+}
+
+function activeSwapCurrentMetadata() {
+  const exercise = currentSession?.exercises?.[activeSwapExerciseIndex];
+  if (!exercise) return null;
+  const { prescription, definition } = sessionExerciseDefinition(exercise);
+  return {
+    ...definition,
+    ...prescription,
+    name: exercise.name,
+    libraryExerciseId: exercise.libraryExerciseId,
+    painfulJoints: exercise.jointPain?.joints || exercise.priorPainPlan?.joints || []
+  };
+}
+
+function activeSwapSearchText(definition) {
+  return [definition.name,definition.primaryMuscle,definition.movementPattern,definition.movementCategory,definition.substitutionFamily,definition.exerciseType,...(definition.equipment||[]),...(definition.searchKeywords||[])].join(" ").toLowerCase();
+}
+
+function renderActiveSwapResults() {
+  const current = activeSwapCurrentMetadata();
+  const results = document.querySelector("#activeSwapResults");
+  if (!current || !results) return;
+  const search = document.querySelector("#activeSwapSearch").value.trim().toLowerCase();
+  const preferences = data.exerciseLibraryUser || {};
+  let ranked = FleemanActiveWorkout.rankReplacementExercises(current, allExerciseDefinitions(), {
+    favorites: preferences.favorites || [], recent: preferences.recent || [], painfulJoints: current.painfulJoints
+  });
+  if (search) ranked = ranked.filter(item=>activeSwapSearchText(item).includes(search));
+  const visible = search || activeSwapShowAll ? ranked : ranked.slice(0,12);
+  document.querySelector("#showAllSwapExercises").textContent = activeSwapShowAll ? "Show recommendations" : "Browse all exercises";
+  results.innerHTML = visible.length ? visible.map((item,index)=>`<article class="active-swap-result ${index<5&&!search?"recommended":""}"><div><strong>${escapeHtml(item.name)}</strong><p>${escapeHtml(item.primaryMuscle||"Other")} • ${escapeHtml(item.movementPattern||item.movementCategory||item.substitutionFamily||"General")} • ${(item.equipment||[]).map(escapeHtml).join(", ")||"Equipment varies"}</p>${index<5&&!search?'<span class="confidence-label">Recommended match</span>':""}</div><button class="primary-button compact choose-active-swap" type="button" data-replacement-id="${escapeHtml(item.id)}">Select</button></article>`).join("") : '<div class="panel"><p>No matching replacement exercises.</p></div>';
+  results.querySelectorAll(".choose-active-swap").forEach(button=>button.onclick=()=>{
+    const replacement=allExerciseDefinitions().find(item=>item.id===button.dataset.replacementId);
+    const scope=document.querySelector("#activeSwapScope").value;
+    if(replacement&&swapExerciseInSession(activeSwapExerciseIndex,replacement,scope))closeActiveSwapDialog();
+  });
+}
+
+function openActiveSwapDialog(exerciseIndex, trigger) {
+  activeSwapExerciseIndex=exerciseIndex;
+  activeSwapReturnFocus=trigger;
+  activeSwapShowAll=false;
+  const exercise=currentSession.exercises[exerciseIndex];
+  const completed=exercise.sets.filter(set=>set.done).length;
+  document.querySelector("#activeSwapTitle").textContent=`Swap ${exercise.name}`;
+  document.querySelector("#activeSwapContext").textContent=completed?`${completed} completed set${completed===1?"":"s"} will remain recorded under ${exercise.name}. The replacement starts as a separate exercise.`:"Choose a recommended replacement or search the full exercise library.";
+  const scope=document.querySelector("#activeSwapScope");
+  const mesocycleOption=scope.querySelector('option[value="mesocycle"]');
+  mesocycleOption.hidden=!currentSession.mesocycle;
+  mesocycleOption.disabled=!currentSession.mesocycle;
+  scope.value="today";
+  document.querySelector("#activeSwapSearch").value="";
+  renderActiveSwapResults();
+  const dialog=document.querySelector("#activeSwapDialog");
+  dialog.showModal();
+  document.querySelector("#activeSwapSearch").focus();
+}
+
+function closeActiveSwapDialog() {
+  const dialog=document.querySelector("#activeSwapDialog");
+  if(dialog.open)dialog.close();
+  activeSwapReturnFocus?.focus();
+  activeSwapExerciseIndex=null;
 }
 
 function enhanceExerciseCard(card, exercise, exerciseIndex) {
@@ -308,7 +367,7 @@ function enhanceExerciseCard(card, exercise, exerciseIndex) {
   const primary = definition.primaryMuscle || prescription.primaryMuscle || prescription.muscle || "Other";
   const secondary = definition.secondaryMuscles || prescription.secondaryMuscles || [];
   const equipment = definition.equipment || prescription.equipment || [];
-  originalHeading?.insertAdjacentHTML("afterend", `<p class="exercise-identity"><strong>${escapeHtml(primary)}</strong> - ${escapeHtml(definition.exerciseType || prescription.exerciseType || "Exercise")}${secondary.length?`<br><span>Secondary: ${secondary.map(escapeHtml).join(", ")}</span>`:""}${equipment.length?`<br><span>Equipment: ${equipment.map(escapeHtml).join(", ")}</span>`:""}</p><div class="exercise-progress-copy"><span>${exercise.sets.filter(set=>set.done).length} of ${exercise.sets.length} sets completed</span><div class="progress-track" role="progressbar" aria-label="${escapeHtml(exercise.name)} progress" aria-valuemin="0" aria-valuemax="${exercise.sets.length}" aria-valuenow="${exercise.sets.filter(set=>set.done).length}"><div class="progress-fill" style="width:${exercise.sets.length?exercise.sets.filter(set=>set.done).length/exercise.sets.length*100:0}%"></div></div></div>${exerciseAdjustmentMarkup(exercise)}${previousPerformanceMarkup(exercise,unit)}`);
+  originalHeading?.insertAdjacentHTML("afterend", `${exercise.substitution?`<p class="replacement-label">Replaced: <strong>${escapeHtml(exercise.substitution.from)}</strong> • ${exercise.substitution.scope==="mesocycle"?"Rest of mesocycle":"Today only"}</p>`:""}${exercise.swapContinuation?`<p class="replacement-label">Remaining work continued as <strong>${escapeHtml(exercise.swapContinuation.to)}</strong></p>`:""}<p class="exercise-identity"><strong>${escapeHtml(primary)}</strong> - ${escapeHtml(definition.exerciseType || prescription.exerciseType || "Exercise")}${secondary.length?`<br><span>Secondary: ${secondary.map(escapeHtml).join(", ")}</span>`:""}${equipment.length?`<br><span>Equipment: ${equipment.map(escapeHtml).join(", ")}</span>`:""}</p><div class="exercise-progress-copy"><span>${exercise.sets.filter(set=>set.done).length} of ${exercise.sets.length} sets completed</span><div class="progress-track" role="progressbar" aria-label="${escapeHtml(exercise.name)} progress" aria-valuemin="0" aria-valuemax="${exercise.sets.length}" aria-valuenow="${exercise.sets.filter(set=>set.done).length}"><div class="progress-fill" style="width:${exercise.sets.length?exercise.sets.filter(set=>set.done).length/exercise.sets.length*100:0}%"></div></div></div>${exerciseAdjustmentMarkup(exercise)}${previousPerformanceMarkup(exercise,unit)}`);
 
   const recommendedField = content.querySelector(".session-weight")?.closest("label");
   if (recommendedField) recommendedField.classList.add("recommended-weight-field");
@@ -321,10 +380,17 @@ function enhanceExerciseCard(card, exercise, exerciseIndex) {
   const starting = exercise.startingWeightRecommendation;
   recommendedField?.insertAdjacentHTML("beforebegin", `<section class="today-prescription"><h4>Today</h4><p><strong>${displayWeightValue(exercise.weight,data.profile?.units)} ${unit}</strong> - ${exercise.sets.length} sets - ${prescription.minReps ?? definition.defaults?.minReps ?? 0} to ${prescription.maxReps ?? definition.defaults?.maxReps ?? 0} ${exerciseRepLabel(exercise)} - Target RIR ${exercise.targetRir}</p>${starting?`<span class="confidence-label">${escapeHtml(starting.label || starting.confidence || "Starting weight")}</span>`:""}<p class="small-note">${escapeHtml(exercise.recommendation || "Use the planned prescription.")}</p></section>`);
 
-  const substitutions = allExerciseDefinitions().filter(item=>item.id!==exercise.libraryExerciseId && (item.substitutionFamily===definition.substitutionFamily || item.primaryMuscle===primary)).slice(0,30);
   const actionMenu = document.createElement("details");
   actionMenu.className = "exercise-action-menu";
-  actionMenu.innerHTML = `<summary>Exercise actions</summary><div class="exercise-action-menu-grid"><button class="secondary-button action-preview" type="button">Preview Exercise</button><button class="secondary-button action-history" type="button">View Exercise History</button><button class="secondary-button action-add-set" type="button">Add Set</button><button class="secondary-button action-remove-set" type="button">Remove Set</button><button class="secondary-button action-note" type="button">Add Note</button><button class="secondary-button action-skip" type="button">${exercise.skipped?"Undo Skip":"Skip Exercise"}</button><button class="secondary-button action-up" type="button" ${exerciseIndex===0?"disabled":""}>Move Up</button><button class="secondary-button action-down" type="button" ${exerciseIndex===currentSession.exercises.length-1?"disabled":""}>Move Down</button>${starting?.calibrationRecommended?'<button class="secondary-button action-recalibrate" type="button">Recalibrate Starting Weight</button>':""}</div><label class="skip-reason-control">Skip reason (optional)<select class="skip-reason"><option value="">No reason</option>${["Equipment unavailable","Time limit","Soreness","Joint pain","Exercise unavailable","Other"].map(reason=>`<option value="${reason}" ${exercise.skipReason===reason?"selected":""}>${reason}</option>`).join("")}</select></label>${substitutions.length?`<div class="swap-control"><label>Swap Exercise<select class="action-swap"><option value="">Choose replacement</option>${substitutions.map(item=>`<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("")}</select></label><label>Replacement scope<select class="swap-scope"><option value="today">Today only</option><option value="permanent">Permanent saved workout change</option>${currentSession.mesocycle?'<option value="mesocycle">Rest of active mesocycle</option>':""}</select></label></div>`:""}`;
+  const actionPanelId = `exercise-options-${String(exercise.id || exercise.exerciseId || exerciseIndex).replace(/[^a-zA-Z0-9_-]/g,"-")}`;
+  actionMenu.innerHTML = `<summary aria-expanded="false" aria-controls="${actionPanelId}"><span><strong>EXERCISE OPTIONS</strong><small>Tap to manage this exercise</small></span><span class="exercise-options-chevron" aria-hidden="true"></span></summary><div id="${actionPanelId}" class="exercise-action-menu-body"><div class="exercise-action-menu-grid"><button class="secondary-button action-preview" type="button"><span aria-hidden="true">◉</span>Preview Exercise</button><button class="secondary-button action-history" type="button"><span aria-hidden="true">↶</span>View History</button><button class="secondary-button action-note" type="button"><span aria-hidden="true">✎</span>Add Note</button><button class="secondary-button action-swap-button" type="button"><span aria-hidden="true">⇄</span>Swap Exercise</button><button class="secondary-button action-skip" type="button"><span aria-hidden="true">⊗</span>${exercise.skipped?"Undo Skip":"Skip Exercise"}</button><button class="secondary-button action-up" type="button" ${exerciseIndex===0?"disabled":""}><span aria-hidden="true">↑</span>Move Up</button><button class="secondary-button action-down" type="button" ${exerciseIndex===currentSession.exercises.length-1?"disabled":""}><span aria-hidden="true">↓</span>Move Down</button>${starting?'<button class="secondary-button action-recalibrate full-width" type="button"><span aria-hidden="true">◇</span>Recalibrate Starting Weight</button>':""}</div><label class="skip-reason-control">Skip reason (optional)<select class="skip-reason"><option value="">No reason</option>${["Equipment unavailable","Time limit","Soreness","Joint pain","Exercise unavailable","Other"].map(reason=>`<option value="${reason}" ${exercise.skipReason===reason?"selected":""}>${reason}</option>`).join("")}</select></label></div>`;
+  const actionSummary = actionMenu.querySelector("summary");
+  actionMenu.addEventListener("toggle",()=>actionSummary.setAttribute("aria-expanded",String(actionMenu.open)));
+  actionSummary.addEventListener("keydown",event=>{
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    actionMenu.open=!actionMenu.open;
+  });
   originalHeading?.insertAdjacentElement("afterend", actionMenu);
 
   const notes = document.createElement("section");
@@ -335,6 +401,8 @@ function enhanceExerciseCard(card, exercise, exerciseIndex) {
 
   const setList = content.querySelector(".set-list");
   setList.innerHTML = exercise.sets.map((set,index)=>setCardMarkup(exercise,set,index,previous,unit,entryLabel)).join("");
+  setList.insertAdjacentHTML("beforebegin", `<div class="live-sets-heading"><h4>SETS</h4><span>${exercise.sets.filter(set=>set.done).length} / ${exercise.sets.length} complete</span></div>`);
+  setList.insertAdjacentHTML("afterend", `<div class="set-list-actions"><button class="action-add-set" type="button"><span aria-hidden="true">＋</span>Add Set</button><button class="action-remove-set" type="button" ${exercise.sets.length<=1?"disabled":""}>Remove Last Set</button></div>`);
   setList.querySelectorAll(".live-set-card").forEach(setCard => {
     const index = Number(setCard.dataset.setIndex);
     const set = exercise.sets[index];
@@ -380,21 +448,18 @@ function enhanceExerciseCard(card, exercise, exerciseIndex) {
   actionMenu.querySelector(".action-note").onclick=()=>notes.querySelector(".permanent-note").focus();
   actionMenu.querySelector(".action-preview").onclick=event=>{const previewDefinition=definitionForExercise(exercise)||definition;if(previewDefinition?.defaults){const priorContext=exerciseLibraryContext;exerciseLibraryContext={type:"browse"};openExercisePreview(previewDefinition,event.currentTarget);exerciseLibraryContext=priorContext;}};
   actionMenu.querySelector(".action-history").onclick=event=>openActiveExerciseHistory(exercise,event.currentTarget);
-  actionMenu.querySelector(".action-add-set").onclick=()=>{const last=exercise.sets.at(-1);exercise.sets.push({id:crypto.randomUUID(),weight:last?.weight??exercise.weight,reps:last?.reps??(prescription.minReps||0),done:false,manuallyEditedWeight:false,manuallyEditedReps:false,restored:false});persistActiveWorkout(true);renderSession();};
-  actionMenu.querySelector(".action-remove-set").onclick=()=>{const last=exercise.sets.at(-1);if(!last){return;}if(exercise.sets.length===1){if(!confirm("Remove the final set and mark this exercise skipped?"))return;exercise.skipped=true;exercise.skipReason="All sets removed";}else{if(last.done&&!confirm("This set is completed. Remove it anyway?"))return;exercise.sets.pop();}persistActiveWorkout(true);renderSession();};
+  content.querySelector(".set-list-actions .action-add-set").onclick=()=>{FleemanActiveWorkout.addWorkingSet(exercise,prescription);persistActiveWorkout(true);renderSession();};
+  content.querySelector(".set-list-actions .action-remove-set").onclick=()=>{const last=exercise.sets.at(-1);if(!last||exercise.sets.length<=1)return;const allowCompleted=!last.done||confirm("This set is completed. Remove this set from the current workout?");if(!allowCompleted)return;FleemanActiveWorkout.removeLastWorkingSet(exercise,last.done);persistActiveWorkout(true);renderSession();};
   actionMenu.querySelector(".action-skip").onclick=()=>{if(exercise.skipped){exercise.skipped=false;exercise.skipReason="";exercise.calibrationComplete=exercise.preSkipCalibrationComplete??exercise.calibrationComplete;}else{exercise.preSkipCalibrationComplete=exercise.calibrationComplete;exercise.calibrationComplete=true;exercise.skipped=true;exercise.skipReason=actionMenu.querySelector(".skip-reason").value;}persistActiveWorkout(true);renderSession();};
   actionMenu.querySelector(".action-up").onclick=()=>moveSessionExercise(exerciseIndex,-1);
   actionMenu.querySelector(".action-down").onclick=()=>moveSessionExercise(exerciseIndex,1);
   actionMenu.querySelector(".action-recalibrate")?.addEventListener("click",()=>{exercise.calibrationComplete=false;exercise.calibrationStarted=false;exercise.calibrationMaxed=false;exercise.calibrationAttempts=[];exercise.expanded=true;persistActiveWorkout(true);renderSession();});
-  actionMenu.querySelector(".action-swap")?.addEventListener("change",event=>{const replacement=allExerciseDefinitions().find(item=>item.id===event.target.value);if(replacement)swapExerciseInSession(exerciseIndex,replacement,actionMenu.querySelector(".swap-scope").value);});
+  actionMenu.querySelector(".action-swap-button").onclick=event=>openActiveSwapDialog(exerciseIndex,event.currentTarget);
 }
 
 function moveSessionExercise(index, direction) {
-  const target = index + direction;
-  if (target < 0 || target >= currentSession.exercises.length) return;
-  const [exercise] = currentSession.exercises.splice(index,1);
-  currentSession.exercises.splice(target,0,exercise);
-  currentSession.currentExerciseIndex=target;
+  if (!FleemanActiveWorkout.moveExercise(currentSession,index,direction)) return;
+  const target=currentSession.currentExerciseIndex;
   currentSession.exercises.forEach((item,itemIndex)=>item.expanded=itemIndex===target);
   persistActiveWorkout(true);renderSession();
 }
@@ -403,7 +468,7 @@ function openActiveExerciseHistory(exercise, trigger) {
   exerciseHistoryReturnFocus=trigger;
   const history=exactExerciseHistory(exercise);
   document.querySelector("#exerciseHistoryTitle").textContent=exercise.name;
-  document.querySelector("#exerciseHistoryContent").innerHTML=history.length?history.map(({session,result},index)=>`<details class="exercise-history-entry" ${index===0?"open":""}><summary><span><strong>${new Date(session.date).toLocaleDateString()}</strong> - ${escapeHtml(session.workoutName)}</span><span>${result.skipped?"Skipped":result.sets?.filter(set=>set.done).length?"Completed":"Stopped"}</span></summary><p>${session.mesocycle?`${escapeHtml([data.mesocycles?.active,...(data.mesocycles?.completed||[])].find(item=>item?.id===session.mesocycle.mesocycleId)?.name||"Mesocycle")} - Week ${session.mesocycle.week}`:"Saved workout"}</p><p><strong>${escapeHtml(result.weightEntryType||weightEntryLabel(definitionForExercise(result)?.defaults?.weightEntryType||"Total Weight"))}</strong></p>${(result.sets||[]).map((set,setIndex)=>`<p>Set ${setIndex+1}: ${escapeHtml(workoutLoadText(result,set.weight??result.weight))} × ${set.reps}${set.done?" ✓":""}</p>`).join("")}<p>Target RIR ${result.targetRir??"-"} - Difficulty: ${feedbackLabel(result.feedback)}</p><p>Joint pain: ${result.jointPain?.rating??1}/5${result.jointPain?.joints?.length?` - ${result.jointPain.joints.map(escapeHtml).join(", ")}`:""}</p><p><strong>Permanent note:</strong> ${escapeHtml(activeExercisePreferences(result).permanentNote||"None")}</p><p><strong>Session note:</strong> ${escapeHtml(result.sessionNote||"None")}</p>${result.substitution?`<p>Substituted: ${escapeHtml(result.substitution.from)} to ${escapeHtml(result.substitution.to)}</p>`:""}${result.skipReason?`<p>Skip reason: ${escapeHtml(result.skipReason)}</p>`:""}</details>`).join(""):'<div class="panel"><p>No exercise history recorded.</p></div>';
+  document.querySelector("#exerciseHistoryContent").innerHTML=history.length?history.map(({session,result},index)=>`<details class="exercise-history-entry" ${index===0?"open":""}><summary><span><strong>${new Date(session.date).toLocaleDateString()}</strong> - ${escapeHtml(session.workoutName)}</span><span>${result.skipped?"Skipped":result.sets?.filter(set=>set.done).length?"Completed":"Stopped"}</span></summary><p>${session.mesocycle?`${escapeHtml([data.mesocycles?.active,...(data.mesocycles?.completed||[])].find(item=>item?.id===session.mesocycle.mesocycleId)?.name||"Mesocycle")} - Week ${session.mesocycle.week}`:"Saved workout"}</p><p><strong>${escapeHtml(result.weightEntryType||weightEntryLabel(definitionForExercise(result)?.defaults?.weightEntryType||"Total Weight"))}</strong></p>${(result.sets||[]).map((set,setIndex)=>`<p>Set ${setIndex+1}: ${escapeHtml(workoutLoadText(result,set.weight??result.weight))} × ${set.reps}${set.done?" ✓":""}</p>`).join("")}<p>Target RIR ${result.targetRir??"-"} - Difficulty: ${feedbackLabel(result.feedback)}</p><p>Joint pain: ${result.jointPain?.rating??1}/5${result.jointPain?.joints?.length?` - ${result.jointPain.joints.map(escapeHtml).join(", ")}`:""}</p><p><strong>Permanent note:</strong> ${escapeHtml(activeExercisePreferences(result).permanentNote||"None")}</p><p><strong>Session note:</strong> ${escapeHtml(result.sessionNote||"None")}</p>${result.substitution?`<p>Substituted: ${escapeHtml(result.substitution.from)} to ${escapeHtml(result.substitution.to)} • ${result.substitution.scope==="mesocycle"?"Rest of mesocycle":"Today only"}</p>`:""}${result.swapContinuation?`<p>Remaining work continued as ${escapeHtml(result.swapContinuation.to)}</p>`:""}${result.skipReason?`<p>Skip reason: ${escapeHtml(result.skipReason)}</p>`:""}</details>`).join(""):'<div class="panel"><p>No exercise history recorded.</p></div>';
   const dialog=document.querySelector("#exerciseHistoryDialog");dialog.showModal();document.querySelector("#closeExerciseHistoryButton").focus();
 }
 
@@ -484,6 +549,10 @@ document.querySelector("#discardSavedSessionButton").onclick=discardActiveWorkou
 document.querySelector("#resumeSessionDialog").addEventListener("cancel",event=>event.preventDefault());
 document.querySelector("#closeExerciseHistoryButton").onclick=closeActiveExerciseHistory;
 document.querySelector("#exerciseHistoryDialog").addEventListener("cancel",event=>{event.preventDefault();closeActiveExerciseHistory();});
+document.querySelector("#closeActiveSwapButton").onclick=closeActiveSwapDialog;
+document.querySelector("#activeSwapDialog").addEventListener("cancel",event=>{event.preventDefault();closeActiveSwapDialog();});
+document.querySelector("#activeSwapSearch").oninput=renderActiveSwapResults;
+document.querySelector("#showAllSwapExercises").onclick=()=>{activeSwapShowAll=!activeSwapShowAll;renderActiveSwapResults();};
 document.querySelector("#autoCollapseExercises").onchange=event=>{data.settings.autoCollapseExercises=event.target.checked;saveData();};
 window.addEventListener("pagehide",()=>persistActiveWorkout(true));
 document.addEventListener("visibilitychange",()=>{if(document.hidden)persistActiveWorkout(true);});
