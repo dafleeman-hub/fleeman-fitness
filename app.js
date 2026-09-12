@@ -1,6 +1,6 @@
 
 const STORAGE_KEY = "fleemanFitnessDataV1";
-const APP_VERSION = "1.6.0-beta";
+const APP_VERSION = "1.7.1-beta";
 let previewReturnFocus = null;
 let previewScrollPosition = 0;
 const defaultData = {
@@ -9,6 +9,12 @@ const defaultData = {
   selectedWorkoutId: "push-a",
   activeWorkoutSession: null,
   mesocycles: { drafts: [], active: null, completed: [] },
+  programBuilderDrafts: { hybrid: {}, marathon: {} },
+  hybridPrograms: { drafts: [], active: null, completed: [] },
+  hybridBuilderDraft: null,
+  runHistory: [],
+  activeRunSession: null,
+  hybridReadinessHistory: [],
   exerciseLibraryUser: { favorites: [], recent: [], customExercises: [], exercisePreferences: {} },
   profile: {
     id:"local-user",displayName:"",units:"imperial",height:{value:null,unit:"in"},bodyWeight:{value:null,unit:"lb"},age:null,gender:"",experienceLevel:"",yearsExperience:null,
@@ -184,6 +190,17 @@ function mergeWithDefaults(saved) {
     settings: { ...defaultData.settings, ...saved.settings, restTimerAlerts: { ...defaultData.settings.restTimerAlerts, ...(saved.settings?.restTimerAlerts || {}) } },
     ui: { ...defaultData.ui, ...(saved.ui || {}) },
     exerciseLibraryUser: { ...structuredClone(defaultData.exerciseLibraryUser), ...(saved.exerciseLibraryUser || {}) },
+    programBuilderDrafts: {
+      hybrid: { ...(saved.programBuilderDrafts?.hybrid || {}) },
+      marathon: { ...(saved.programBuilderDrafts?.marathon || {}) }
+    },
+    hybridPrograms: {
+      drafts: Array.isArray(saved.hybridPrograms?.drafts) ? saved.hybridPrograms.drafts : [],
+      active: saved.hybridPrograms?.active || null,
+      completed: Array.isArray(saved.hybridPrograms?.completed) ? saved.hybridPrograms.completed : []
+    },
+    runHistory: Array.isArray(saved.runHistory) ? saved.runHistory : [],
+    hybridReadinessHistory: Array.isArray(saved.hybridReadinessHistory) ? saved.hybridReadinessHistory : [],
     profile: {...structuredClone(defaultData.profile),...(saved.profile||{}),quickStrengthProfile:{...defaultData.profile.quickStrengthProfile,...(saved.profile?.quickStrengthProfile||{})},trainingBackground:{...defaultData.profile.trainingBackground,...(saved.profile?.trainingBackground||{})},onboardingStatus:{...defaultData.profile.onboardingStatus,...(saved.profile?.onboardingStatus||{})}}
   };
   migrateExerciseReferences(merged);
@@ -308,6 +325,7 @@ function renderAll() {
   document.querySelector("#appVersion").textContent = APP_VERSION;
   renderProfile();
   renderUpdateNotice();
+  if (typeof renderProgramModeCards === "function") renderProgramModeCards();
 }
 
 function profileDisplayMeasurement(measurement,metricUnit){if(measurement?.value==null)return"Not provided";if(metricUnit==="cm")return`${Math.round(Number(measurement.value)*2.54)} cm`;if(metricUnit==="kg")return`${Math.round(Number(measurement.value)/2.20462*10)/10} kg`;return`${measurement.value} ${measurement.unit}`;}
@@ -870,13 +888,13 @@ function renderHistory() {
     const rollingContext = h.mesocycle?.scheduleType === "rolling"
       ? `<p class="small-note"><strong>Rolling Cycle</strong> • Cycle ${h.mesocycle.cycle || h.mesocycle.week} • Day ${h.mesocycle.cycleDay || Number(h.mesocycle.slot) + 1} of ${h.mesocycle.cycleLength} • ${h.mesocycle.phase === "deload" ? "Deload" : "Normal"}</p>`
       : h.mesocycle ? `<p class="small-note"><strong>Weekly Schedule</strong> • Week ${h.mesocycle.week}</p>` : "";
-    const statusText = h.type === "rest-day" ? `Planned rest day • ${escapeHtml(h.scheduleStatus || "completed")}` : h.type === "extra-rest-day" ? "Extra rest day • Original cycle numbering unchanged" : h.type === "skipped-workout" ? `Skipped workout${h.skipReason ? ` • ${escapeHtml(h.skipReason)}` : ""}` : "";
+    const statusText = h.type === "run" ? `${Number(h.run?.completedDistance || 0).toFixed(1)} ${escapeHtml(h.run?.distanceUnit || "mi")} • ${escapeHtml(h.run?.completedDuration || "Duration not entered")} • RPE ${Number(h.run?.rpe || 0)} • ${escapeHtml(h.run?.completion || "completed")}` : h.type === "rest-day" ? `Planned rest day • ${escapeHtml(h.scheduleStatus || "completed")}` : h.type === "extra-rest-day" ? "Extra rest day • Original cycle numbering unchanged" : h.type === "skipped-workout" ? `Skipped workout${h.skipReason ? ` • ${escapeHtml(h.skipReason)}` : ""}` : "";
     const el = document.createElement("article");
     el.className = "history-card";
     el.innerHTML = `
       <div class="workout-card-top">
         <div><h3>${escapeHtml(h.workoutName)}</h3><p>${new Date(h.date).toLocaleString()}</p></div>
-        <strong>${sets} sets</strong>
+        <strong>${h.type === "run" ? "RUN" : `${sets} sets`}</strong>
       </div>
       ${rollingContext}
       ${statusText ? `<p>${statusText}</p>` : `<p>${exercises.map(exerciseHistorySummary).join(" • ")}</p>`}
@@ -1267,10 +1285,17 @@ function beginWorkout(id, sorenessRecord, context = pendingWorkoutContext, decis
       const pain = rec.pain || { rating: 1, joints: [] };
       let plannedSets = prescription?.sets ?? e.sets;
       let plannedRir = prescription?.targetRir ?? Number(e.targetRir ?? 3);
+      if (context?.scheduleType === "hybrid" && Number(context.hybridAdjustment?.volumeMultiplier || 1) < 1) {
+        plannedSets = Math.max(1, Math.floor(plannedSets * Number(context.hybridAdjustment.volumeMultiplier)));
+        plannedRir = Math.max(plannedRir, Number(context.hybridAdjustment.volumeMultiplier) <= .6 ? 4 : plannedRir + 1);
+      }
       if (pain.rating === 3) plannedRir += 1;
       const reducedPainSets = pain.rating >= 4 ? Math.max(1, Math.floor(plannedSets * .5)) : plannedSets;
       if (pain.rating === 4) plannedRir = Math.max(4, plannedRir);
       if (pain.rating >= 4) plannedSets = 0;
+      const hybridHeldWeight = context?.scheduleType === "hybrid" && context.hybridAdjustment?.holdProgression
+        ? Number(latestExerciseResult(e.id)?.weight ?? e.startWeight ?? rec.weight)
+        : null;
       return {
         exerciseId: e.id,
         libraryExerciseId: e.libraryExerciseId || null,
@@ -1278,8 +1303,9 @@ function beginWorkout(id, sorenessRecord, context = pendingWorkoutContext, decis
         weightEntryType: e.weightEntryType || definitionForExercise(e)?.defaults?.weightEntryType || "Total Weight",
         progressionMode: e.progressionMode || definitionForExercise(e)?.progressionMode || "manual",
         repUnit: exerciseRepUnit(e),
-        weight: prescription?.weight ?? rec.weight,
-        recommendation: rec.note,
+        weight: hybridHeldWeight ?? prescription?.weight ?? rec.weight,
+        recommendation: hybridHeldWeight != null ? "Hybrid load management: hold weight progression for this session." : rec.note,
+        hybridAdjustment: context?.scheduleType === "hybrid" ? structuredClone(context.hybridAdjustment || {}) : null,
         startingWeightRecommendation: structuredClone(starting),
         calibrationAttempts: [],
         calibrationComplete: !calibrationAllowed,
@@ -1440,6 +1466,7 @@ function finishWorkout() {
   finishedSession.exercises.forEach(exercise => markExerciseUsed(exercise.libraryExerciseId));
   data.history.unshift(finishedSession);
   if (typeof onMesocycleWorkoutFinished === "function") onMesocycleWorkoutFinished(finishedSession);
+  if (typeof onHybridStrengthWorkoutFinished === "function") onHybridStrengthWorkoutFinished(finishedSession);
   currentSession = null;
   renderUpdateNotice();
   document.querySelector("#sessionDialog").close();
@@ -1693,22 +1720,27 @@ if ("serviceWorker" in navigator) {
     window.location.reload();
   });
   window.addEventListener("load", async () => {
-    const registration = await navigator.serviceWorker.register("service-worker.js?v=63");
-    if (registration.waiting && navigator.serviceWorker.controller) {
-      waitingServiceWorker = registration.waiting;
-      renderUpdateNotice();
-    }
-    registration.addEventListener("updatefound", () => {
-      const installing = registration.installing;
-      if (!installing) return;
-      installing.addEventListener("statechange", () => {
-        if (installing.state === "installed" && navigator.serviceWorker.controller) {
-          waitingServiceWorker = installing;
-          renderUpdateNotice();
-        }
+    try {
+      const registration = await navigator.serviceWorker.register("service-worker.js?v=72");
+      if (!registration) return;
+      if (registration.waiting && navigator.serviceWorker.controller) {
+        waitingServiceWorker = registration.waiting;
+        renderUpdateNotice();
+      }
+      registration.addEventListener("updatefound", () => {
+        const installing = registration.installing;
+        if (!installing) return;
+        installing.addEventListener("statechange", () => {
+          if (installing.state === "installed" && navigator.serviceWorker.controller) {
+            waitingServiceWorker = installing;
+            renderUpdateNotice();
+          }
+        });
       });
-    });
-    sessionStorage.removeItem("fleemanFitnessUpdating");
+      sessionStorage.removeItem("fleemanFitnessUpdating");
+    } catch (error) {
+      console.warn("Offline support could not start in this browser session.", error);
+    }
   });
 }
 

@@ -8,8 +8,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Fleeman Fit" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="icon" href="icons/icon-192.png" type="image/png" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=70" />
+  <link rel="stylesheet" href="styles.css?v=73" />
   <title>Fleeman Fitness</title>
 </head>
 <body>
@@ -90,20 +91,42 @@
 
     <section id="programsView" class="view">
       <div class="section-heading">
-        <div><p class="eyebrow">MESOCYCLE MANAGEMENT</p><h2>Build</h2><p class="small-note">Create a training block or continue the one already in progress.</p></div>
-        <button id="newMesocycleButton" class="primary-button compact">Create New Mesocycle</button>
+        <div><p class="eyebrow">PROGRAM BUILDER</p><h2>Build</h2><p class="small-note">Choose how you want to train, then build a plan around that goal.</p></div>
+        <button id="newMesocycleButton" class="primary-button compact">Create Strength Mesocycle</button>
       </div>
-      <section class="build-choice-panel dashboard-panel" aria-labelledby="buildChoiceTitle">
-        <div class="dashboard-panel-heading"><h3 id="buildChoiceTitle">Start a new mesocycle</h3><span class="dashboard-corner-mark" aria-hidden="true"></span></div>
-        <div class="build-choice-grid">
-          <button id="buildFromPremadeButton" class="secondary-button"><span>Use a premade program</span><small>Choose a complete weekly program, then customize its schedule and length.</small></button>
-          <button id="buildCustomMesoButton" class="secondary-button"><span>Build a custom mesocycle</span><small>Create the training days and exercises yourself using the existing builder.</small></button>
-        </div>
+      <nav id="buildModeTabs" class="build-mode-tabs" aria-label="Program type">
+        <button class="build-mode-tab active" type="button" data-build-mode="strength" aria-selected="true"><span aria-hidden="true">◆</span> Strength</button>
+        <button class="build-mode-tab" type="button" data-build-mode="hybrid" aria-selected="false"><span aria-hidden="true">↯</span> Hybrid Training</button>
+        <button class="build-mode-tab" type="button" data-build-mode="marathon" aria-selected="false"><span aria-hidden="true">◎</span> Marathon Training</button>
+      </nav>
+
+      <div id="strengthBuildPanel" class="build-mode-panel active" data-build-panel="strength">
+        <section class="build-choice-panel dashboard-panel" aria-labelledby="buildChoiceTitle">
+          <div class="dashboard-panel-heading"><h3 id="buildChoiceTitle">Start a new strength mesocycle</h3><span class="dashboard-corner-mark" aria-hidden="true"></span></div>
+          <div class="build-choice-grid">
+            <button id="buildFromPremadeButton" class="secondary-button"><span>Use a premade program</span><small>Choose a complete weekly program, then customize its schedule and length.</small></button>
+            <button id="buildCustomMesoButton" class="secondary-button"><span>Build a custom mesocycle</span><small>Create the training days and exercises yourself using the existing weekly or rolling-cycle builder.</small></button>
+          </div>
+        </section>
+        <div class="section-heading"><h3>Active mesocycle</h3></div>
+        <div id="activeMesocycle"></div>
+        <div class="section-heading"><h3>Draft mesocycles</h3></div>
+        <div id="draftMesocycles" class="card-list"></div>
+      </div>
+
+      <section id="hybridBuildPanel" class="build-mode-panel" data-build-panel="hybrid" aria-labelledby="hybridBuildTitle">
+        <div class="build-mode-intro"><p class="eyebrow">STRENGTH + ENDURANCE</p><h3 id="hybridBuildTitle">Choose your hybrid emphasis</h3><p>Start with the outcome that matters most. You can fine-tune lifting and running availability in the next step.</p></div>
+        <div id="hybridProgramCards" class="program-mode-card-grid"></div>
+        <div class="section-heading"><h3>Active Hybrid program</h3></div>
+        <div id="activeHybridProgram"></div>
+        <div class="section-heading"><h3>Hybrid drafts</h3></div>
+        <div id="hybridDraftPrograms" class="card-list"></div>
       </section>
-      <div class="section-heading"><h3>Active mesocycle</h3></div>
-      <div id="activeMesocycle"></div>
-      <div class="section-heading"><h3>Draft mesocycles</h3></div>
-      <div id="draftMesocycles" class="card-list"></div>
+
+      <section id="marathonBuildPanel" class="build-mode-panel" data-build-panel="marathon" aria-labelledby="marathonBuildTitle">
+        <div class="build-mode-intro"><p class="eyebrow">26.2-MILE PREPARATION</p><h3 id="marathonBuildTitle">Choose your marathon level</h3><p>Tell Fleeman Fitness where you are starting so a future training plan can be built around your race and availability.</p></div>
+        <div id="marathonProgramCards" class="program-mode-card-grid"></div>
+      </section>
     </section>
 
     <section id="builderView" class="view">
@@ -403,6 +426,64 @@
     </div>
   </dialog>
 
+  <dialog id="programSetupDialog" aria-labelledby="programSetupTitle">
+    <form id="programSetupForm" class="dialog-card program-setup-dialog" novalidate>
+      <div class="dialog-header sticky">
+        <div><p id="programSetupEyebrow" class="eyebrow">PROGRAM SETUP</p><h2 id="programSetupTitle">Set up your program</h2></div>
+        <button id="closeProgramSetupButton" class="icon-button" type="button" aria-label="Cancel program setup">×</button>
+      </div>
+      <div id="programSetupBody"></div>
+      <p id="programSetupError" class="form-error hidden" role="alert"></p>
+      <div class="program-setup-actions">
+        <button id="cancelProgramSetupButton" class="secondary-button" type="button">Back</button>
+        <button class="primary-button" type="submit">Save Setup Draft</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="hybridBuilderDialog" aria-labelledby="hybridBuilderTitle">
+    <form id="hybridBuilderForm" class="dialog-card hybrid-builder-dialog" novalidate>
+      <div class="dialog-header sticky">
+        <div><p class="eyebrow">HYBRID PROGRAM BUILDER</p><h2 id="hybridBuilderTitle">Build Hybrid Training</h2><p id="hybridBuilderSaveStatus" class="builder-save-status" aria-live="polite">Draft saves automatically</p></div>
+        <button id="closeHybridBuilderButton" class="icon-button" type="button" aria-label="Close Hybrid builder">×</button>
+      </div>
+      <div id="hybridBuilderProgress" class="step-progress" role="progressbar" aria-valuemin="1" aria-valuemax="9"></div>
+      <div id="hybridBuilderBody"></div>
+      <div class="builder-actions sticky-actions">
+        <button id="hybridBuilderBack" class="secondary-button" type="button">Back</button>
+        <button id="hybridBuilderNext" class="primary-button" type="button">Continue</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="hybridProgramDialog" aria-labelledby="hybridProgramTitle">
+    <div class="dialog-card hybrid-program-dialog">
+      <div class="dialog-header sticky"><div><p class="eyebrow">HYBRID PROGRAM REVIEW</p><h2 id="hybridProgramTitle">Your Hybrid program</h2></div><button id="closeHybridProgramButton" class="icon-button" type="button" aria-label="Close Hybrid program review">×</button></div>
+      <div id="hybridProgramBody"></div>
+    </div>
+  </dialog>
+
+  <dialog id="hybridReadinessDialog" aria-labelledby="hybridReadinessTitle">
+    <form id="hybridReadinessForm" class="dialog-card compact-dialog-card" novalidate>
+      <div class="dialog-header"><div><p class="eyebrow">DAILY READINESS</p><h2 id="hybridReadinessTitle">Check in before training</h2></div><button id="closeHybridReadinessButton" class="icon-button" type="button" aria-label="Cancel readiness check">×</button></div>
+      <div id="hybridReadinessBody"></div>
+    </form>
+  </dialog>
+
+  <dialog id="runSessionDialog" aria-labelledby="runSessionTitle">
+    <form id="runSessionForm" class="dialog-card run-session-dialog" novalidate>
+      <div class="dialog-header sticky"><div><p class="eyebrow">RUN SESSION</p><h2 id="runSessionTitle">Easy Run</h2></div><button id="closeRunSessionButton" class="icon-button" type="button" aria-label="Save and close run">×</button></div>
+      <div id="runSessionBody"></div>
+    </form>
+  </dialog>
+
+  <dialog id="hybridMissedDialog" aria-labelledby="hybridMissedTitle">
+    <div class="dialog-card compact-dialog-card">
+      <div class="dialog-header"><div><p class="eyebrow">MISSED SESSION</p><h2 id="hybridMissedTitle">Review this session</h2></div><button id="closeHybridMissedButton" class="icon-button" type="button" aria-label="Close missed-session options">×</button></div>
+      <div id="hybridMissedBody"></div>
+    </div>
+  </dialog>
+
   <nav class="mobile-dock" aria-label="Mobile navigation">
     <button class="dock-tab active" data-dock-view="homeView" type="button"><span aria-hidden="true">⌂</span><small>Home</small></button>
     <button class="dock-tab" data-dock-view="builderView" type="button"><span aria-hidden="true">▦</span><small>Library</small></button>
@@ -429,19 +510,26 @@
     </div>
   </template>
 
-  <script src="exercise-library.js?v=70"></script>
-  <script src="bodyweight-exercises.js?v=70"></script>
-  <script src="workout-classifier.js?v=70"></script>
-  <script src="schedule-utils.js?v=70"></script>
-  <script src="active-workout-utils.js?v=70"></script>
-  <script src="program-templates.js?v=70"></script>
-  <script src="starting-weight-rules.js?v=70"></script>
-  <script src="validation.js?v=70"></script>
-  <script src="app.js?v=70"></script>
-  <script src="live-workout.js?v=70"></script>
-  <script src="mesocycles.js?v=70"></script>
-  <script src="rolling-cycles.js?v=70"></script>
-  <script src="builder-reliability.js?v=70"></script>
-  <script src="fitness-enhancements.js?v=70"></script>
+  <script src="exercise-library.js?v=73"></script>
+  <script src="bodyweight-exercises.js?v=73"></script>
+  <script src="workout-classifier.js?v=73"></script>
+  <script src="schedule-utils.js?v=73"></script>
+  <script src="active-workout-utils.js?v=73"></script>
+  <script src="program-templates.js?v=73"></script>
+  <script src="starting-weight-rules.js?v=73"></script>
+  <script src="validation.js?v=73"></script>
+  <script src="hybrid-config.js?v=73"></script>
+  <script src="hybrid-stress.js?v=73"></script>
+  <script src="hybrid-progression.js?v=73"></script>
+  <script src="hybrid-recovery.js?v=73"></script>
+  <script src="hybrid-scheduler.js?v=73"></script>
+  <script src="app.js?v=73"></script>
+  <script src="live-workout.js?v=73"></script>
+  <script src="mesocycles.js?v=73"></script>
+  <script src="rolling-cycles.js?v=73"></script>
+  <script src="builder-reliability.js?v=73"></script>
+  <script src="fitness-enhancements.js?v=73"></script>
+  <script src="build-modes.js?v=73"></script>
+  <script src="hybrid-ui.js?v=73"></script>
 </body>
 </html>
