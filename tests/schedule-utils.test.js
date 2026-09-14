@@ -1,7 +1,12 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { getCurrentActionableWorkout, markOccurrenceSkipped } = require("../schedule-utils.js");
+const { dateKey, nextMondayKey, getCurrentActionableWorkout, markOccurrenceSkipped } = require("../schedule-utils.js");
+
+const sundayEvening = new Date(2026, 8, 13, 21, 30);
+assert.equal(dateKey(sundayEvening), "2026-09-13", "Calendar A: a Sunday evening remains Sunday instead of becoming Monday through UTC conversion");
+assert.equal(nextMondayKey(sundayEvening), "2026-09-14", "Calendar B: Start Next Monday selects the following local Monday");
+assert.equal(nextMondayKey(new Date(2026, 8, 14, 9)), "2026-09-21", "Calendar C: choosing Start Next Monday on Monday selects the next Monday");
 const weekly = () => ({
   scheduleType:"weekly", startDate:"2026-08-10", totalWeeks:2,
   schedule:[0,2,4].map((dayIndex,index)=>({dayIndex,workout:{name:`Training Day ${index+1}`,exercises:[]}})),
@@ -35,4 +40,4 @@ for(let slot=4;slot<8;slot+=1)rolling.progress.completed.push({cycle:1,slot});
 markOccurrenceSkipped(rolling,getCurrentActionableWorkout(rolling));
 assert.deepEqual([getCurrentActionableWorkout(rolling).cycle,getCurrentActionableWorkout(rolling).slot],[2,0],"Rolling D: Day 9 rolls to Cycle 2 Day 1");
 
-console.log("PASS schedule selector: weekly A-F and rolling A-D");
+console.log("PASS schedule selector: local calendar A-C, weekly A-F, and rolling A-D");

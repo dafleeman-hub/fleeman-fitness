@@ -9,7 +9,8 @@
   const Recovery = globalThis.FleemanHybridRecovery;
   const StrengthAdapter = globalThis.FleemanHybridStrengthAdapter;
   const Reasons = globalThis.FleemanProgressionReasons;
-  if (!Config || !Stress || !Scheduler || !Progression || !Recovery || !StrengthAdapter || !Reasons) return;
+  const Schedule = globalThis.FleemanSchedule;
+  if (!Config || !Stress || !Scheduler || !Progression || !Recovery || !StrengthAdapter || !Reasons || !Schedule) return;
 
   const PRIORITY_NAMES = { strength: "Strength Priority", balanced: "Balanced Hybrid", running: "Running Priority", race: "Race Hybrid" };
   const PROFILE_IDS = { strength: "strength-priority", balanced: "balanced-hybrid", running: "running-priority", race: "race-hybrid" };
@@ -23,11 +24,13 @@
   let missedContext = null;
   let activationInProgress = false;
   let activationUi = { state: "idle", programId: null, message: "" };
+  let renderedCalendarDate = "";
 
   function id(prefix) { return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
   function clone(value) { return JSON.parse(JSON.stringify(value)); }
   function html(value) { return typeof escapeHtml === "function" ? escapeHtml(value ?? "") : String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[c]); }
-  function today() { return new Date().toISOString().slice(0, 10); }
+  function today(date = new Date()) { return Schedule.dateKey(date); }
+  function plannedStartDate(startTiming = "today", referenceDate = new Date()) { return startTiming === "monday" ? Schedule.nextMondayKey(referenceDate) : today(referenceDate); }
   function distanceUnit(program = data.hybridPrograms?.active) { return program?.setup?.runningDistanceUnit || (data.profile?.units === "metric" ? "km" : "mi"); }
   function isRolling(program) { return (program?.scheduleType || program?.setup?.scheduleType) === "rolling"; }
   function periodName(program) { return isRolling(program) ? "Cycle" : "Week"; }
@@ -38,10 +41,10 @@
       for (let cycle = 1; cycle <= totalCycles; cycle += 1) if (weekOccurrences(program, cycle).some(item => !isResolved(program, item.occurrenceId))) return cycle;
       return totalCycles;
     }
-    const start = new Date(`${program.startDate || today()}T00:00:00`);
-    const startWeek = new Date(start); startWeek.setHours(0, 0, 0, 0); startWeek.setDate(startWeek.getDate() - mondayIndex(startWeek));
-    const referenceWeek = new Date(date); referenceWeek.setHours(0, 0, 0, 0); referenceWeek.setDate(referenceWeek.getDate() - mondayIndex(referenceWeek));
-    return Math.max(1, Math.min(program.totalWeeks || 4, Math.floor((referenceWeek - startWeek) / 604800000) + 1));
+    const start = Schedule.localDate(program.startDate || today());
+    const startWeek = new Date(start); startWeek.setDate(startWeek.getDate() - mondayIndex(startWeek));
+    const referenceWeek = Schedule.localDate(date); referenceWeek.setDate(referenceWeek.getDate() - mondayIndex(referenceWeek));
+    return Math.max(1, Math.min(program.totalWeeks || 4, Math.round((referenceWeek - startWeek) / 604800000) + 1));
   }
   function persist(render = false) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -67,6 +70,8 @@
       program.scheduleType ||= program.setup?.scheduleType || "weekly";
       program.setup ||= {};
       program.setup.scheduleType ||= program.scheduleType;
+      program.startTiming ||= program.setup.startTiming || "today";
+      program.setup.startTiming ||= program.startTiming;
       program.setup.runPrescriptionStyle ||= "distance";
       normalizeSchedulingPreferenceDays(program.setup);
       program.schemaVersion = Math.max(Number(program.schemaVersion || 1), Number(Config.SCHEMA_VERSION || 1));
@@ -77,14 +82,18 @@
       program.progress.reviewedWeeks ||= [];
       program.progressionDecisions ||= [];
     });
-    if (data.hybridBuilderDraft) normalizeSchedulingPreferenceDays(data.hybridBuilderDraft);
+    if (data.hybridBuilderDraft) {
+      data.hybridBuilderDraft.startTiming ||= "today";
+      data.hybridBuilderDraft.startDate ||= plannedStartDate(data.hybridBuilderDraft.startTiming);
+      normalizeSchedulingPreferenceDays(data.hybridBuilderDraft);
+    }
   }
 
   function defaultBuilder(priority = "balanced") {
     const profile = data.profile || {};
     return {
       id: id("hybrid-builder"), schemaVersion: Config.SCHEMA_VERSION || 1, programMode: "hybrid", status: "builder-draft", currentStep: 1,
-      hybridPriority: priority, scheduleType: "weekly", trainingDays: 5, availableDays: [0, 1, 2, 3, 4], rollingCycleLength: 8, rollingNormalCycles: 4, twoADayPreference: "occasionally", preferredTrainingTimes: ["morning"],
+      hybridPriority: priority, scheduleType: "weekly", startTiming: "today", startDate: today(), trainingDays: 5, availableDays: [0, 1, 2, 3, 4], rollingCycleLength: 8, rollingNormalCycles: 4, twoADayPreference: "occasionally", preferredTrainingTimes: ["morning"],
       strengthSourceMode: "", strengthWorkoutSnapshots: [], generatedStrengthWorkouts: [], strengthPicker: "", strengthSessionsTarget: "auto", runningSessionsTarget: "auto",
       strengthProfile: { experience: profile.experience || "Beginner", reuseProfile: true }, runningDistanceUnit: profile.units === "metric" ? "km" : "mi", runPrescriptionStyle: "distance",
       runningBaseline: { experience: "New to running", runsPerWeek: 0, weeklyMileage: 0, longestRun: 0, consistency: "not-running", recentPerformance: "", recentPerformanceDistance: "", recentPerformanceTime: "" },
@@ -226,6 +235,10 @@
       ["weekly", "Weekly Schedule", "Tie sessions to specific weekdays and repeat Monday through Sunday."],
       ["rolling", "Rolling Cycle", "Follow numbered training and rest days in order, regardless of the weekday."]
     ], p.scheduleType || "weekly");
+    const startChoice = radioCards("startTiming", [
+      ["today", "Start Today", `Begin on ${new Date().toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}. Weekly schedules ignore earlier days in the first week.`],
+      ["monday", "Start Next Monday", `Begin on ${Schedule.nextMonday().toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}.`]
+    ], p.startTiming || "today");
     let scheduleFields = "";
     if (p.scheduleType === "rolling") {
       scheduleFields = field("rollingCycleLength", "Days in one rolling cycle", `<input name="rollingCycleLength" type="number" min="3" max="21" value="${p.rollingCycleLength || 8}" inputmode="numeric">`)
@@ -238,7 +251,7 @@
         + field("schedulingPreferences.heavyLowerDay", "Preferred heavy lower day", `<select name="heavyLowerDay"><option value="">No preference</option>${DAY_OPTIONS}</select>`)
         + field("schedulingPreferences.restDay", "Preferred rest day", `<select name="restDay"><option value="">No preference</option>${DAY_OPTIONS}</select>`);
     }
-    return `<div class="hybrid-step"><p class="eyebrow">STEP 8 OF 9 • COMBINED SCHEDULE</p><h3>Coordinate Strength and Running</h3><p class="small-note">The coordinator will inspect the actual exercises and stress in every selected Strength workout before placing sessions.</p>${scheduleChoice}<div class="hybrid-form-grid">${scheduleFields}${field("twoADayPreference", "Two-a-days", `<select name="twoADayPreference"><option value="no" ${p.twoADayPreference === "no" ? "selected" : ""}>No</option><option value="occasionally" ${p.twoADayPreference === "occasionally" ? "selected" : ""}>Occasionally</option><option value="yes" ${p.twoADayPreference === "yes" ? "selected" : ""}>Yes</option></select>`)}${field("preferredTrainingTimes", "Preferred time", '<select name="preferredTrainingTimes"><option value="morning">Morning</option><option value="afternoon">Afternoon</option><option value="evening">Evening</option></select>')}${field("schedulingPreferences.runningSurface", "Running surface", `<select name="runningSurface">${["Mixed", "Road", "Track", "Trail", "Treadmill"].map(value => `<option ${p.schedulingPreferences.runningSurface === value ? "selected" : ""}>${value}</option>`).join("")}</select>`)}</div></div>`;
+    return `<div class="hybrid-step"><p class="eyebrow">STEP 8 OF 9 • COMBINED SCHEDULE</p><h3>Coordinate Strength and Running</h3><p class="small-note">The coordinator will inspect the actual exercises and stress in every selected Strength workout before placing sessions.</p><h4>Schedule format</h4>${scheduleChoice}<h4>When should this program begin?</h4>${startChoice}<div class="hybrid-form-grid">${scheduleFields}${field("twoADayPreference", "Two-a-days", `<select name="twoADayPreference"><option value="no" ${p.twoADayPreference === "no" ? "selected" : ""}>No</option><option value="occasionally" ${p.twoADayPreference === "occasionally" ? "selected" : ""}>Occasionally</option><option value="yes" ${p.twoADayPreference === "yes" ? "selected" : ""}>Yes</option></select>`)}${field("preferredTrainingTimes", "Preferred time", '<select name="preferredTrainingTimes"><option value="morning">Morning</option><option value="afternoon">Afternoon</option><option value="evening">Evening</option></select>')}${field("schedulingPreferences.runningSurface", "Running surface", `<select name="runningSurface">${["Mixed", "Road", "Track", "Trail", "Treadmill"].map(value => `<option ${p.schedulingPreferences.runningSurface === value ? "selected" : ""}>${value}</option>`).join("")}</select>`)}</div></div>`;
   }
 
   function renderBuilderStep() {
@@ -258,12 +271,13 @@
     };
     document.querySelector("#hybridBuilderBody").innerHTML = parts[step];
     if (p.scheduleType === "rolling" && step === 4) document.querySelector('[data-field-key="runningSessionsTarget"] > span').textContent = "Run sessions per cycle";
-    if (step === 9) document.querySelector(".builder-review-card p").textContent = `${p.scheduleType === "rolling" ? `${p.rollingCycleLength} rolling days × ${p.rollingNormalCycles} cycles` : `${p.trainingDays} target days from ${p.availableDays.length} available weekdays`} • ${strengthWorkoutsForBuilder(p).length} Strength workouts • ${p.runningSessionsTarget === "auto" ? "Engine-selected" : p.runningSessionsTarget} runs • ${p.runPrescriptionStyle === "time" ? "Time-based" : "Distance-based"} runs`;
+    if (step === 9) document.querySelector(".builder-review-card p").textContent = `${p.startTiming === "monday" ? "Starts next Monday" : "Starts today"} • ${p.scheduleType === "rolling" ? `${p.rollingCycleLength} rolling days × ${p.rollingNormalCycles} cycles` : `${p.trainingDays} target days from ${p.availableDays.length} available weekdays`} • ${strengthWorkoutsForBuilder(p).length} Strength workouts • ${p.runningSessionsTarget === "auto" ? "Engine-selected" : p.runningSessionsTarget} runs • ${p.runPrescriptionStyle === "time" ? "Time-based" : "Distance-based"} runs`;
     document.querySelector("#hybridBuilderBack").textContent = step === 1 ? "Save & close" : "Back";
     document.querySelector("#hybridBuilderNext").textContent = step === 9 ? "Build my Hybrid program" : "Continue";
     restoreSelectValues();
     document.querySelectorAll(".hybrid-choice input").forEach(input => input.addEventListener("change", () => document.querySelectorAll(`input[name="${input.name}"]`).forEach(item => item.closest(".hybrid-choice")?.classList.toggle("selected", item.checked))));
     document.querySelectorAll('input[name="scheduleType"]').forEach(input => input.addEventListener("change", () => { builder.scheduleType = input.value; renderBuilderStep(); }));
+    document.querySelectorAll('input[name="startTiming"]').forEach(input => input.addEventListener("change", () => { builder.startTiming = input.value; builder.startDate = plannedStartDate(input.value); }));
     if (step === 3) bindStrengthSetupActions();
   }
 
@@ -305,6 +319,8 @@
     if (step === 7) { const limitations = [...form.querySelectorAll('[name="limitations"]:checked')].map(i => i.value); builder.recoveryPreferences.limitations = limitations.includes("None") && limitations.length > 1 ? limitations.filter(v => v !== "None") : limitations; builder.recoveryPreferences.sleep = value("typicalSleep"); builder.recoveryPreferences.fatigue = value("typicalFatigue"); if (validate && !builder.recoveryPreferences.limitations.length) errors["recoveryPreferences.limitations"] = "Choose None or at least one limitation."; }
     if (step === 8) {
       builder.scheduleType = value("scheduleType") || builder.scheduleType || "weekly";
+      builder.startTiming = value("startTiming") || builder.startTiming || "today";
+      builder.startDate = plannedStartDate(builder.startTiming);
       builder.twoADayPreference = value("twoADayPreference");
       builder.preferredTrainingTimes = [value("preferredTrainingTimes")];
       if (builder.scheduleType === "rolling") {
@@ -333,7 +349,7 @@
     ensureHybridData(); builderTrigger = trigger;
     const existing = data.hybridBuilderDraft?.hybridPriority === priority ? data.hybridBuilderDraft : null;
     const generated = data.hybridPrograms.drafts.find(program => program.hybridPriority === priority);
-    builder = clone(existing || generated?.setup || defaultBuilder(priority)); builder.currentStep = Number(builder.currentStep) || 1; builder.scheduleType ||= "weekly"; builder.rollingCycleLength ||= 8; builder.rollingNormalCycles ||= 4; builder.runPrescriptionStyle ||= "distance"; builder.strengthWorkoutSnapshots ||= []; builder.generatedStrengthWorkouts ||= []; if (!builder.strengthSourceMode && (existing || generated)) builder.strengthSourceMode = "generated"; normalizeSchedulingPreferenceDays(builder);
+    builder = clone(existing || generated?.setup || defaultBuilder(priority)); builder.currentStep = Number(builder.currentStep) || 1; builder.scheduleType ||= "weekly"; builder.startTiming ||= "today"; builder.startDate ||= plannedStartDate(builder.startTiming); builder.rollingCycleLength ||= 8; builder.rollingNormalCycles ||= 4; builder.runPrescriptionStyle ||= "distance"; builder.strengthWorkoutSnapshots ||= []; builder.generatedStrengthWorkouts ||= []; if (!builder.strengthSourceMode && (existing || generated)) builder.strengthSourceMode = "generated"; normalizeSchedulingPreferenceDays(builder);
     renderBuilderStep(); document.querySelector("#hybridBuilderDialog").showModal();
   }
 
@@ -353,7 +369,7 @@
     const totalWeeks = rolling ? Number(builder.rollingNormalCycles || 4) : builder.raceGoal.enabled && builder.raceGoal.date ? Math.max(4, Math.min(20, Math.ceil((new Date(builder.raceGoal.date) - new Date()) / 604800000))) : 4;
     const program = {
       id: existing?.id || id("hybrid"), builderId: builder.id, schemaVersion: Config.SCHEMA_VERSION || 1, programMode: "hybrid", hybridPriority: builder.hybridPriority,
-      name: `${PRIORITY_NAMES[builder.hybridPriority]} Block`, status: "draft", createdAt: existing?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString(), startDate: today(), scheduleType: builder.scheduleType || "weekly", totalWeeks, totalCycles: rolling ? totalWeeks : null, cycleLength: rolling ? Number(builder.rollingCycleLength || generated.cycleLength || 8) : null,
+      name: `${PRIORITY_NAMES[builder.hybridPriority]} Block`, status: "draft", createdAt: existing?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString(), startTiming: builder.startTiming || "today", startDate: plannedStartDate(builder.startTiming), scheduleType: builder.scheduleType || "weekly", totalWeeks, totalCycles: rolling ? totalWeeks : null, cycleLength: rolling ? Number(builder.rollingCycleLength || generated.cycleLength || 8) : null,
       setup: clone(schedulerSetup), strengthWorkouts: clone(strengthWorkouts), schedule: generated.schedule, scheduleScore: generated.score, conflicts: generated.conflicts, loadSummary: generated.loadSummary, why: generated.why, racePhase: generated.racePhase, preferenceDecision: generated.preferenceDecision || null,
       alternativesEvaluated: generated.alternativesEvaluated, progress: existing?.progress || { completed: [], skipped: [], rescheduled: [], reviewedWeeks: [] }, progressionDecisions: existing?.progressionDecisions || [], deferredStrengthProgression: [], recoveryWeekState: 0
     };
@@ -363,30 +379,49 @@
 
   function allHybridPrograms() { return [data.hybridPrograms.active, ...data.hybridPrograms.drafts, ...data.hybridPrograms.completed].filter(Boolean); }
   function findProgram(programId) { return allHybridPrograms().find(program => program.id === programId) || null; }
-  function occurrence(program, week, dayIndex, session) { return { program, week, cycle: isRolling(program) ? week : null, dayIndex, session, occurrenceId: `${week}:${dayIndex}:${session.id}` }; }
+  function hybridOccurrenceDate(program, week, dayIndex) {
+    if (isRolling(program)) return null;
+    const start = Schedule.localDate(program.startDate || today());
+    if (!start) return null;
+    const startWeek = new Date(start);
+    startWeek.setDate(startWeek.getDate() - mondayIndex(startWeek));
+    const date = new Date(startWeek);
+    date.setDate(startWeek.getDate() + Number(dayIndex) + (Number(week) - 1) * 7);
+    return date;
+  }
+  function occurrence(program, week, dayIndex, session) {
+    const scheduledDate = hybridOccurrenceDate(program, week, dayIndex);
+    return { program, week, cycle: isRolling(program) ? week : null, dayIndex, session, scheduledDate: scheduledDate ? Schedule.dateKey(scheduledDate) : null, occurrenceId: `${week}:${dayIndex}:${session.id}` };
+  }
   function isResolved(program, occurrenceId) { return program.progress.completed.some(item => item.occurrenceId === occurrenceId) || program.progress.skipped.some(item => item.occurrenceId === occurrenceId); }
   function scheduleForWeek(program, week) { return program.weeklyOverrides?.[week] || program.schedule; }
-  function weekOccurrences(program, week = currentWeek(program)) { return scheduleForWeek(program, week).flatMap(day => day.sessions.map(session => occurrence(program, week, day.dayIndex, session))); }
+  function weekOccurrences(program, week = currentWeek(program)) {
+    return scheduleForWeek(program, week)
+      .flatMap(day => day.sessions.map(session => occurrence(program, week, day.dayIndex, session)))
+      .filter(item => isRolling(program) || Number(week) > 1 || !item.scheduledDate || item.scheduledDate >= (program.startDate || today()))
+      .sort((a, b) => String(a.scheduledDate || "").localeCompare(String(b.scheduledDate || "")) || a.dayIndex - b.dayIndex);
+  }
   function currentActionableDay(program = data.hybridPrograms.active) {
     if (!program) return null;
-    const week = currentWeek(program), dayNow = mondayIndex();
+    const week = currentWeek(program), todayKey = today();
     if (isRolling(program)) {
       const open = weekOccurrences(program, week).filter(item => !isResolved(program, item.occurrenceId));
       if (!open.length) return null;
       const first = open[0];
       return { ...scheduleForWeek(program, week)[first.dayIndex], occurrences: open.filter(item => item.dayIndex === first.dayIndex) };
     }
-    const activationFloor = week === 1 && Number.isInteger(program.activationDayIndex) ? program.activationDayIndex : 0;
-    const days = scheduleForWeek(program, week).map(day => ({ ...day, occurrences: day.sessions.map(session => occurrence(program, week, day.dayIndex, session)).filter(item => !isResolved(program, item.occurrenceId)) })).filter(day => day.dayIndex >= activationFloor && day.occurrences.length);
-    return days.find(day => day.dayIndex < dayNow) || days.find(day => day.dayIndex === dayNow) || days.find(day => day.dayIndex > dayNow) || null;
+    const open = weekOccurrences(program, week).filter(item => !isResolved(program, item.occurrenceId));
+    if (!open.length) return null;
+    const first = open.find(item => item.scheduledDate < todayKey) || open.find(item => item.scheduledDate === todayKey) || open.find(item => item.scheduledDate > todayKey);
+    const day = scheduleForWeek(program, week).find(item => Number(item.dayIndex) === Number(first.dayIndex));
+    return day ? { ...day, occurrences: open.filter(item => item.dayIndex === first.dayIndex) } : null;
   }
   function nextActionable(program = data.hybridPrograms.active) {
     if (!program) return null;
-    const week = currentWeek(program), dayNow = mondayIndex();
+    const week = currentWeek(program), todayKey = today();
     if (isRolling(program)) return weekOccurrences(program, week).find(item => !isResolved(program, item.occurrenceId)) || null;
-    const activationFloor = week === 1 && Number.isInteger(program.activationDayIndex) ? program.activationDayIndex : 0;
-    const open = weekOccurrences(program, week).filter(item => item.dayIndex >= activationFloor && !isResolved(program, item.occurrenceId));
-    return open.find(item => item.dayIndex < dayNow) || open.find(item => item.dayIndex === dayNow) || open.find(item => item.dayIndex > dayNow) || null;
+    const open = weekOccurrences(program, week).filter(item => !isResolved(program, item.occurrenceId));
+    return open.find(item => item.scheduledDate < todayKey) || open.find(item => item.scheduledDate === todayKey) || open.find(item => item.scheduledDate > todayKey) || null;
   }
   function nextFuturePeriodActionable(program = data.hybridPrograms.active) {
     if (!program || isRolling(program)) return null;
@@ -666,8 +701,9 @@
       data.hybridPrograms.drafts = data.hybridPrograms.drafts.filter(item => item.id !== program.id);
       program.status = "active";
       program.activatedAt = new Date().toISOString();
-      program.startDate = today();
-      program.activationDayIndex = isRolling(program) ? null : mondayIndex();
+      program.startTiming = program.setup?.startTiming || program.startTiming || "today";
+      program.startDate = plannedStartDate(program.startTiming);
+      program.activationDayIndex = isRolling(program) ? null : program.startTiming === "monday" ? 0 : mondayIndex();
       program.reviewState = "started";
       data.hybridPrograms.active = program;
       data.hybridBuilderDraft = null;
@@ -911,12 +947,36 @@
 
   function renderHybridHome() {
     const program = data.hybridPrograms.active; if (!program) return;
+    renderedCalendarDate = today();
     const pausedStrength = dashboardSavedSession(), activeRun = data.activeRunSession, next = nextActionable(program), futureNext = next ? null : nextFuturePeriodActionable(program), actionDay = currentActionableDay(program);
     const week = currentWeek(program), dayNow = mondayIndex(), todayPlan = isRolling(program) ? null : scheduleForWeek(program, week).find(day => day.dayIndex === dayNow);
-    const todayIsRest = Boolean(todayPlan && !(todayPlan.sessions || []).some(session => session.type !== "rest") && (!next || next.dayIndex >= dayNow));
+    const startsLater = !isRolling(program) && Boolean(program.startDate) && program.startDate > today();
+    const todayIsRest = !startsLater && Boolean(todayPlan && !(todayPlan.sessions || []).some(session => session.type !== "rest") && (!next || !next.scheduledDate || next.scheduledDate >= today()));
     const name = document.querySelector("#todayWorkoutName"), summary = document.querySelector("#todayWorkoutSummary"), badge = document.querySelector("#todaySessionBadge"), meta = document.querySelector("#todayMesoMeta"), primary = document.querySelector("#startWorkoutButton"), preview = document.querySelector("#previewTodayWorkoutButton");
     if (pausedStrength) { name.textContent = pausedStrength.workoutName || "Active strength workout"; summary.textContent = "Your logged sets and notes are saved on this device."; badge.textContent = "WORKOUT IN PROGRESS"; meta.textContent = `${program.name} • ${periodName(program).toUpperCase()} ${currentWeek(program)}`; primary.textContent = "Resume workout"; primary.onclick = () => document.querySelector("#sessionDialog")?.showModal(); preview.classList.add("hidden"); }
-    else if (activeRun) { name.textContent = activeRun.planned.title; summary.textContent = "Your run log is saved. Resume when you are ready."; badge.textContent = "RUN IN PROGRESS"; meta.textContent = `${program.name} • ${periodName(program).toUpperCase()} ${activeRun.context.week}`; primary.textContent = "Resume run"; primary.onclick = () => launchCurrentHybrid(primary); preview.classList.add("hidden"); }
+    else if (activeRun) {
+      const activeDate = hybridOccurrenceDate(program, activeRun.context.week, activeRun.context.dayIndex);
+      const activeDateKey = activeDate ? Schedule.dateKey(activeDate) : "";
+      const activeDay = activeDate ? Config.DAYS[mondayIndex(activeDate)] : Config.DAYS[activeRun.context.dayIndex];
+      const carriedForward = activeDateKey && activeDateKey !== today();
+      name.textContent = activeRun.planned.title;
+      summary.textContent = carriedForward ? `This ${activeDay} session is still in progress. Your run log is saved.` : "Your run log is saved. Resume when you are ready.";
+      badge.textContent = carriedForward ? `${activeDay.toUpperCase()} RUN IN PROGRESS` : "RUN IN PROGRESS";
+      meta.textContent = `${program.name} • ${periodName(program).toUpperCase()} ${activeRun.context.week}`;
+      primary.textContent = carriedForward ? `Resume ${activeDay}'s run` : "Resume run";
+      primary.onclick = () => launchCurrentHybrid(primary); preview.classList.add("hidden");
+    }
+    else if (startsLater) {
+      const first = weekOccurrences(program, 1)[0];
+      const start = Schedule.localDate(program.startDate);
+      name.textContent = `Program starts ${start.toLocaleDateString([], { weekday: "long" })}`;
+      summary.textContent = first ? `Your first scheduled session is ${first.session.title}. Nothing is due before the selected start date.` : "Nothing is due before the selected start date.";
+      badge.textContent = "PROGRAM SCHEDULED";
+      meta.textContent = `${program.name} • ${start.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}`;
+      primary.textContent = "Review program";
+      primary.onclick = () => openHybridProgram(program.id);
+      preview.classList.add("hidden");
+    }
     else if (todayIsRest) {
       name.textContent = "Rest Day";
       const upcoming = next || futureNext;
@@ -928,7 +988,7 @@
       preview.classList.add("hidden");
     }
     else if (next) {
-      const missed = !isRolling(program) && next.dayIndex < mondayIndex(), combined = !missed && actionDay?.occurrences.length > 1;
+      const missed = !isRolling(program) && Boolean(next.scheduledDate) && next.scheduledDate < today(), combined = !missed && actionDay?.occurrences.length > 1;
       if (next.session.type === "rest") {
         name.textContent = "Rest Day"; summary.textContent = "Complete this planned recovery day when you are ready to advance the rolling sequence."; badge.textContent = "NEXT ROLLING DAY"; meta.textContent = `${program.name} • CYCLE ${next.week} • CYCLE DAY ${next.dayIndex + 1}`;
         primary.textContent = "Complete Rest Day"; primary.onclick = () => completeRollingRest(next); preview.classList.remove("hidden"); preview.textContent = "Review program"; preview.onclick = () => openHybridProgram(program.id);
@@ -949,7 +1009,7 @@
       progressionHost.innerHTML = changedSession ? progressionChangeMarkup(changedSession, program) : "";
       progressionHost.classList.toggle("hidden", !changedSession);
     }
-    const weekly = weekOccurrences(program, week), doneCount = weekly.filter(item => isResolved(program, item.occurrenceId)).length, currentDayIndex = isRolling(program) ? next?.dayIndex : dayNow;
+    const weekly = weekOccurrences(program, week), doneCount = weekly.filter(item => isResolved(program, item.occurrenceId)).length, currentDayIndex = isRolling(program) ? next?.dayIndex : startsLater ? null : dayNow;
     const totalPeriods = isRolling(program) ? program.totalCycles || program.totalWeeks : program.totalWeeks;
     document.querySelector("#weekDashboardSummary").textContent = `${doneCount} of ${weekly.length} sessions resolved • ${periodName(program)} ${week} of ${totalPeriods}`;
     document.querySelector("#todayWeekStrip").innerHTML = scheduleForWeek(program, week).map(day => { const occurrences = day.sessions.map(session => occurrence(program, week, day.dayIndex, session)); const done = occurrences.length && occurrences.every(item => isResolved(program, item.occurrenceId)); const current = day.dayIndex === currentDayIndex; const plannedRest = day.sessions.length > 0 && day.sessions.every(session => session.type === "rest"); const title = day.sessions.length ? day.sessions.map(item => item.title).join(" + ") : "Rest"; const shortLabel = isRolling(program) ? `D${day.dayIndex + 1}` : day.day.slice(0,3).toUpperCase(); return `<button class="week-day ${done ? "completed" : current ? "current" : day.sessions.length ? "planned" : "empty"}" type="button" data-hybrid-day="${day.dayIndex}" aria-label="${day.day}: ${html(title)}"><span>${shortLabel}</span><strong>${plannedRest ? "R" : day.sessions.length || "•"}</strong><i>${done ? "✓" : current ? "NOW" : plannedRest ? "REST" : day.sessions.length ? "NEXT" : "REST"}</i></button>`; }).join("");
@@ -974,6 +1034,16 @@
     persist();
   }
 
+  function refreshForCalendarChange() {
+    const currentDate = today();
+    if (!renderedCalendarDate) renderedCalendarDate = currentDate;
+    if (currentDate === renderedCalendarDate) return false;
+    renderedCalendarDate = currentDate;
+    renderHome();
+    renderHybridBuildPanel();
+    return true;
+  }
+
   const originalRenderHome = globalThis.renderHome;
   globalThis.renderHome = function () { originalRenderHome(); renderHybridHome(); };
   const originalSaveData = globalThis.saveData;
@@ -981,7 +1051,7 @@
   globalThis.openHybridBuilder = openHybridBuilder;
   globalThis.renderHybridBuildPanel = renderHybridBuildPanel;
   globalThis.onHybridStrengthWorkoutFinished = onHybridStrengthWorkoutFinished;
-  globalThis.FleemanHybridLifecycle = { validateProgramForActivation, activateHybridProgram };
+  globalThis.FleemanHybridLifecycle = { validateProgramForActivation, activateHybridProgram, refreshForCalendarChange };
 
   function bindHybridUi() {
     ensureHybridData(); persist();
@@ -1004,4 +1074,7 @@
     renderHybridBuildPanel(); renderProgramModeCards?.(); renderHome();
   }
   bindHybridUi();
+  window.addEventListener("focus", refreshForCalendarChange);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshForCalendarChange(); });
+  window.setInterval(refreshForCalendarChange, 30000);
 })();

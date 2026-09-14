@@ -17,6 +17,18 @@
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   }
 
+  function nextMonday(value = new Date()) {
+    const date = localDate(value);
+    if (!date) return null;
+    const daysUntilNextMonday = (8 - date.getDay()) % 7 || 7;
+    date.setDate(date.getDate() + daysUntilNextMonday);
+    return date;
+  }
+
+  function nextMondayKey(value = new Date()) {
+    return dateKey(nextMonday(value));
+  }
+
   function occurrenceMatches(entry, period, slot, rolling) {
     if (!entry) return false;
     const entryPeriod = Number(rolling ? entry.cycle ?? entry.week : entry.week);
@@ -119,7 +131,7 @@
     return entry;
   }
 
-  const api = { dateKey, localDate, occurrenceMatches, occurrenceResolved, weeklyOccurrenceDate, weeklyOccurrences, rollingOccurrences, getCurrentActionableWorkout, markOccurrenceSkipped };
+  const api = { dateKey, localDate, nextMonday, nextMondayKey, occurrenceMatches, occurrenceResolved, weeklyOccurrenceDate, weeklyOccurrences, rollingOccurrences, getCurrentActionableWorkout, markOccurrenceSkipped };
   root.FleemanSchedule = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof globalThis !== "undefined" ? globalThis : window);

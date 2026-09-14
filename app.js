@@ -1,6 +1,6 @@
 
 const STORAGE_KEY = "fleemanFitnessDataV1";
-const APP_VERSION = "1.9.0-prototype";
+const APP_VERSION = "1.9.1-prototype";
 let previewReturnFocus = null;
 let previewScrollPosition = 0;
 let workoutEditorContext = null;
@@ -638,7 +638,7 @@ function templateExercisePrescription(item) {
 }
 
 function mesocycleFromProgramTemplate(template) {
-  return {id:crypto.randomUUID(),name:template.name,scheduleType:"weekly",startDate:new Date().toISOString().slice(0,10),trainingWeeks:4,includeDeload:false,totalWeeks:4,daysPerWeek:template.daysPerWeek,status:"draft",createdAt:new Date().toISOString(),sourceTemplateId:template.id,sourceTemplateVersion:PROGRAM_TEMPLATE_VERSION,progress:{week:1,slot:0,completed:[],skipped:[],needsWeekReview:false},schedule:template.schedule.map((day,index)=>({id:crypto.randomUUID(),dayIndex:day.dayIndex,order:index,focusMuscle:day.workout.focus,workout:{id:crypto.randomUUID(),name:day.workout.name,notes:day.workout.focus,exercises:day.workout.exercises.map(templateExercisePrescription).filter(Boolean)}}))};
+  return {id:crypto.randomUUID(),name:template.name,scheduleType:"weekly",startDate:FleemanSchedule.dateKey(new Date()),trainingWeeks:4,includeDeload:false,totalWeeks:4,daysPerWeek:template.daysPerWeek,status:"draft",createdAt:new Date().toISOString(),sourceTemplateId:template.id,sourceTemplateVersion:PROGRAM_TEMPLATE_VERSION,progress:{week:1,slot:0,completed:[],skipped:[],needsWeekReview:false},schedule:template.schedule.map((day,index)=>({id:crypto.randomUUID(),dayIndex:day.dayIndex,order:index,focusMuscle:day.workout.focus,workout:{id:crypto.randomUUID(),name:day.workout.name,notes:day.workout.focus,exercises:day.workout.exercises.map(templateExercisePrescription).filter(Boolean)}}))};
 }
 
 function programWeeklySets(template) {

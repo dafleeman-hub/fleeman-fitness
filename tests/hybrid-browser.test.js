@@ -64,6 +64,8 @@ const desktopWidths = [1024, 1280, 1440];
   for (let step = 4; step < 9; step++) {
     assert.ok(await page.locator(`#hybridBuilderBody >> text=STEP ${step} OF 9`).count(), `step ${step} rendered`);
     if (step === 8) {
+      assert.equal(await page.locator('input[name="startTiming"]').count(), 2, "Hybrid scheduling offers Start Today and Start Next Monday");
+      await page.locator('input[name="startTiming"][value="today"]').check();
       await page.locator('input[name="trainingDays"]').fill("6");
       await page.locator('input[name="availableDays"][value="5"]').evaluate(input => { input.checked = true; input.dispatchEvent(new Event("change", { bubbles: true })); });
       await page.locator('input[name="availableDays"][value="6"]').evaluate(input => { input.checked = true; input.dispatchEvent(new Event("change", { bubbles: true })); });
@@ -73,8 +75,8 @@ const desktopWidths = [1024, 1280, 1440];
     }
     await page.locator("#hybridBuilderNext").click();
   }
-  const storedPreferredDay = await page.evaluate(() => ({ draft: data.hybridBuilderDraft.schedulingPreferences.longRunDay, persisted: JSON.parse(localStorage.getItem(STORAGE_KEY)).hybridBuilderDraft.schedulingPreferences.longRunDay }));
-  assert.deepEqual(storedPreferredDay, { draft: "sunday", persisted: "sunday" }, "Sunday survives builder state and autosave unchanged");
+  const storedPreferredDay = await page.evaluate(() => ({ draft: data.hybridBuilderDraft.schedulingPreferences.longRunDay, persisted: JSON.parse(localStorage.getItem(STORAGE_KEY)).hybridBuilderDraft.schedulingPreferences.longRunDay, startTiming: data.hybridBuilderDraft.startTiming }));
+  assert.deepEqual(storedPreferredDay, { draft: "sunday", persisted: "sunday", startTiming: "today" }, "Sunday and Start Today survive builder state and autosave unchanged");
   assert.ok(await page.locator("#hybridBuilderBody details.advanced-options:not([open])").count(), "advanced options start collapsed");
   await page.locator("#hybridBuilderNext").click();
   await page.locator("#hybridProgramDialog").waitFor({ state: "visible" });
@@ -172,6 +174,10 @@ const desktopWidths = [1024, 1280, 1440];
       activeView: data.ui.activeView,
       historyView: history.state?.view,
       hash: location.hash,
+      startDate: data.hybridPrograms.active?.startDate,
+      localToday: FleemanSchedule.dateKey(new Date()),
+      activationDayIndex: data.hybridPrograms.active?.activationDayIndex,
+      localDayIndex: FleemanHybridConfig.jsDayToHybridIndex(new Date().getDay()),
       buttonStates: window.__activationButtonStates
     };
   }, activationIdentity);
@@ -183,6 +189,8 @@ const desktopWidths = [1024, 1280, 1440];
   assert.equal(activationResult.activeView, "homeView", "activation navigates to the real Home view");
   assert.equal(activationResult.historyView, "homeView", "Review history state is replaced by Home");
   assert.equal(activationResult.hash, "", "the stale Review URL marker is removed");
+  assert.equal(activationResult.startDate, activationResult.localToday, "Start Today stores the browser's local calendar date");
+  assert.equal(activationResult.activationDayIndex, activationResult.localDayIndex, "Start Today uses the same local weekday representation as the schedule");
   assert.ok(activationResult.buttonStates.some(state => /Starting Program/i.test(state.text) && state.disabled && state.busy === "true"), "the Start button enters a disabled loading state");
   assert.match(await page.locator("#todayMesoMeta").innerText(), /Balanced Hybrid/i, "Home immediately identifies the active Hybrid mode");
   assert.equal(await page.locator("#hybridProgramDialog").evaluate(dialog => dialog.open), false, "Program Review closes after successful activation");

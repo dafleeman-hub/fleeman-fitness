@@ -230,9 +230,9 @@ function renderRollingBasics(body) {
   };
   ["#rollingCycleLength", "#rollingNormalCycles", "#rollingDeloadMode"].forEach(selector => document.querySelector(selector).addEventListener("input", updatePreview));
   document.querySelectorAll(".meso-date-choice").forEach(button => button.onclick = () => {
-    const date = new Date();
+    const date = FleemanSchedule.localDate(new Date());
     if (button.dataset.dateChoice === "tomorrow") date.setDate(date.getDate() + 1);
-    document.querySelector("#mesoStartDate").value = date.toISOString().slice(0, 10);
+    document.querySelector("#mesoStartDate").value = FleemanSchedule.dateKey(date);
   });
   updatePreview();
 }
@@ -346,11 +346,11 @@ function rollingPlannedDateValue(mesocycle, next) {
   if (rescheduled) return rescheduled.date;
   const date = new Date(`${mesocycle.startDate}T12:00:00`);
   date.setDate(date.getDate() + (next.cycle - 1) * mesocycle.cycleLength + next.slot);
-  return date.toISOString().slice(0, 10);
+  return FleemanSchedule.dateKey(date);
 }
 
 function rollingDayIsOverdue(mesocycle, next) {
-  return rollingPlannedDateValue(mesocycle, next) < new Date().toISOString().slice(0, 10);
+  return rollingPlannedDateValue(mesocycle, next) < FleemanSchedule.dateKey(new Date());
 }
 
 function renderRollingReview(body) {
@@ -767,7 +767,7 @@ function keepRollingDayAsNext() {
 function rescheduleRollingDay(mesocycle) {
   const next = nextMesoSlot(mesocycle);
   if (!next) return;
-  const selected = prompt("Enter the chosen date in YYYY-MM-DD format.", new Date().toISOString().slice(0, 10));
+  const selected = prompt("Enter the chosen date in YYYY-MM-DD format.", FleemanSchedule.dateKey(new Date()));
   if (selected == null) return;
   const valid = /^\d{4}-\d{2}-\d{2}$/.test(selected) && !Number.isNaN(new Date(`${selected}T12:00:00`).getTime());
   if (!valid) return alert("Enter a valid date in YYYY-MM-DD format.");
@@ -951,7 +951,7 @@ duplicateMesocycle = function (source) {
   copy.id = crypto.randomUUID();
   copy.name = `${source.name} Copy`;
   copy.status = "draft";
-  copy.startDate = new Date().toISOString().slice(0, 10);
+  copy.startDate = FleemanSchedule.dateKey(new Date());
   copy.progress = rollingProgressDefaults();
   copy.schedule.forEach((slot, index) => {
     slot.id = crypto.randomUUID();
