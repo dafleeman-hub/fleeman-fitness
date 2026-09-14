@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const config = require("../hybrid-config.js");
 const stress = require("../hybrid-stress.js");
 const scheduler = require("../hybrid-scheduler.js");
 const progression = require("../hybrid-progression.js");
@@ -22,6 +23,60 @@ const baseSetup = {
   runningBaseline: { runsPerWeek: 3, weeklyMileage: 15, longestRun: 6, consistency: "3-12-months" }, runningIntensityDisplay: "pace-rpe",
   recoveryPreferences: { limitations: ["None"] }, schedulingPreferences: { longRunDay: "5", heavyLowerDay: "1", restDay: "6", runningSurface: "Mixed" }, advanced: { maximumRunningDays: 5 }
 };
+
+const weekdayIds = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+weekdayIds.forEach((weekday, index) => {
+  assert.equal(config.weekdayId(weekday), weekday, `${weekday} keeps its semantic weekday ID`);
+  assert.equal(config.weekdayId(index), weekday, `legacy Monday-first index ${index} maps to ${weekday}`);
+  assert.equal(config.dayIndex(weekday), index, `${weekday} maps to Monday-first index ${index}`);
+  assert.equal(config.jsDayToHybridIndex(config.hybridIndexToJsDay(index)), index, `${weekday} survives the JavaScript Date boundary`);
+});
+
+function preferenceCandidate(longDayIndex, rating = null, score = 100, marker = "candidate") {
+  const days = Array.from({ length: 7 }, (_, dayIndex) => ({ dayIndex, sessions: dayIndex === longDayIndex ? [{ type: "run", runType: "Long Easy Run" }] : [] }));
+  const conflicts = rating ? [{ rating, dayIndex: 6, nextDayIndex: null }] : [];
+  return { marker, days, conflicts, score };
+}
+const sundayPreferenceSetup = { schedulingPreferences: { longRunDay: "sunday" } };
+const higherScoringMoved = preferenceCandidate(0, null, 130, "moved");
+const greenSunday = preferenceCandidate(6, null, 100, "green-sunday");
+assert.deepEqual(scheduler.selectCandidatesForPreferredLongRun([higherScoringMoved, greenSunday], sundayPreferenceSetup, [0,1,2,3,4,5,6]).candidates.map(item => item.marker), ["green-sunday"], "Case 1: a higher unpreferred score does not displace a conflict-free Sunday long run");
+const yellowSunday = preferenceCandidate(6, "yellow", 90, "yellow-sunday");
+assert.deepEqual(scheduler.selectCandidatesForPreferredLongRun([higherScoringMoved, yellowSunday], sundayPreferenceSetup, [0,1,2,3,4,5,6]).candidates.map(item => item.marker), ["yellow-sunday"], "Case 2: a manageable Yellow conflict keeps the Sunday preference");
+const orangeSunday = preferenceCandidate(6, "orange", 85, "orange-sunday-upper-moved");
+assert.deepEqual(scheduler.selectCandidatesForPreferredLongRun([higherScoringMoved, orangeSunday], sundayPreferenceSetup, [0,1,2,3,4,5,6]).candidates.map(item => item.marker), ["orange-sunday-upper-moved"], "Case 3: a resolvable Orange arrangement keeps Sunday and moves the other session");
+const redSunday = preferenceCandidate(6, "red", 80, "red-sunday");
+const rearrangedSunday = preferenceCandidate(6, "yellow", 78, "heavy-lower-rearranged");
+assert.deepEqual(scheduler.selectCandidatesForPreferredLongRun([higherScoringMoved, redSunday, rearrangedSunday], sundayPreferenceSetup, [0,1,2,3,4,5,6]).candidates.map(item => item.marker), ["heavy-lower-rearranged"], "Case 4: a Red conflict is resolved by selecting the rearranged Sunday candidate");
+const impossiblePreference = scheduler.selectCandidatesForPreferredLongRun([higherScoringMoved, redSunday], sundayPreferenceSetup, [0,1,2,3,4,5,6]);
+assert.equal(impossiblePreference.candidates.length, 2, "Case 5: an unavoidable Red conflict permits the scheduler to move the long run");
+assert.match(impossiblePreference.decision.reason, /unavoidable Red conflict/i, "Case 5: the move includes an explicit reason");
+assert.equal(scheduler.selectCandidatesForPreferredLongRun([higherScoringMoved, greenSunday], { schedulingPreferences: { longRunDay: "" } }, [0,1,2,3,4,5,6]).decision, null, "Case 6: no preference leaves normal scoring unchanged");
+
+const preferredDayBase = { ...baseSetup, trainingDays: 6, availableDays: [0, 1, 2, 3, 4, 5, 6], twoADayPreference: "no", schedulingPreferences: { longRunDay: "", heavyLowerDay: "", restDay: "", runningSurface: "Mixed" }, advanced: { ...baseSetup.advanced, maxConsecutiveDays: 7 } };
+weekdayIds.forEach((weekday, expectedIndex) => {
+  const generated = scheduler.generateHybridSchedule({ ...preferredDayBase, schedulingPreferences: { ...preferredDayBase.schedulingPreferences, longRunDay: weekday } }, [upper, lower, full]);
+  const longDay = generated.schedule.find(day => day.sessions.some(session => session.runType === "Long Easy Run"));
+  assert.equal(longDay.dayIndex, expectedIndex, `preferred ${weekday} long run stays on ${weekday}`);
+  assert.equal(generated.preferenceDecision.honored, true, `${weekday} preference is strongly preserved`);
+});
+
+const sundayScenario = scheduler.generateHybridSchedule({ ...preferredDayBase, availableDays: ["monday", "tuesday", "wednesday", "friday", "saturday", "sunday"], schedulingPreferences: { ...preferredDayBase.schedulingPreferences, longRunDay: "sunday" }, advanced: { ...preferredDayBase.advanced, maxConsecutiveDays: 3 } }, [upper, lower, full]);
+const sundayLongRun = sundayScenario.schedule.find(day => day.sessions.some(session => session.runType === "Long Easy Run"));
+assert.equal(sundayLongRun.day, "Sunday", "Sunday availability and Sunday preference use the same representation");
+assert.equal(sundayScenario.preferenceDecision.preferredDayIndex, 6, "Sunday normalizes to Hybrid index 6");
+
+const manageableConflict = scheduler.generateHybridSchedule({ ...preferredDayBase, schedulingPreferences: { ...preferredDayBase.schedulingPreferences, longRunDay: "sunday", heavyLowerDay: "sunday" } }, [upper, lower, full]);
+const manageableSunday = manageableConflict.schedule[6];
+assert.ok(manageableSunday.sessions.some(session => session.runType === "Long Easy Run"), "long run remains Sunday when another movable preference competes with it");
+assert.ok(!manageableSunday.sessions.some(session => session.subtype === "Heavy Lower"), "heavy lower work is rearranged away from the protected Sunday long run");
+
+const impossibleSunday = scheduler.generateHybridSchedule({ ...preferredDayBase, availableDays: [0, 1, 2, 3, 4, 5], trainingDays: 5, schedulingPreferences: { ...preferredDayBase.schedulingPreferences, longRunDay: "sunday" } }, [upper, lower, full]);
+assert.equal(impossibleSunday.preferenceDecision.honored, false, "an unavailable Sunday may be moved");
+assert.match(impossibleSunday.preferenceDecision.reason, /not selected as an available training day/i, "an unavailable preferred day receives an explicit reason");
+
+const noPreferredLongRun = scheduler.generateHybridSchedule(preferredDayBase, [upper, lower, full]);
+assert.equal(noPreferredLongRun.preferenceDecision, null, "without a preferred long-run day the scheduler chooses normally");
 for (const priority of ["strength", "balanced", "running", "race"]) {
   const setup = { ...baseSetup, hybridPriority: priority, raceGoal: { enabled: priority === "race", distance: "10K" } };
   const generated = scheduler.generateHybridSchedule(setup, [upper, lower, full]);
@@ -50,6 +105,46 @@ const movedIds = moved.program.schedule.flatMap(day => day.sessions.map(session 
 assert.equal(movedIds.filter(value => value === moveSource.id).length, 1, "rescheduling moves one occurrence without duplication");
 const noDoubles = scheduler.generateHybridSchedule({ ...baseSetup, trainingDays: 6, availableDays: [0, 1, 2, 3, 4, 5, 6], twoADayPreference: "no" }, [upper, lower, full]);
 assert.ok(noDoubles.schedule.every(day => day.sessions.length <= 1), "two-a-days disabled is a hard constraint");
+assert.equal(noDoubles.loadSummary.trainingDaysUsed, 6, "six-day Balanced Hybrid uses all six intended training days");
+assert.equal(noDoubles.loadSummary.targetTrainingDays, 6, "training-day target is preserved in the summary");
+assert.equal(noDoubles.loadSummary.strengthSessions, 3, "six-day Balanced Hybrid keeps three strength sessions");
+assert.equal(noDoubles.loadSummary.runningSessions, 3, "six-day Balanced Hybrid keeps three runs");
+assert.match(noDoubles.why.join(" "), /6 of 6 intended training days/i, "the schedule explains day use");
+
+const newRunnerSixDay = scheduler.generateHybridSchedule({ ...baseSetup, trainingDays: 6, availableDays: [0, 1, 2, 3, 4, 5, 6], twoADayPreference: "occasionally", runningBaseline: { runsPerWeek: 0, weeklyMileage: 0, longestRun: 0, consistency: "not-running" } }, [upper, lower, full]);
+assert.ok(newRunnerSixDay.loadSummary.trainingDaysUsed >= 5, "new runners still receive productive use of most intended days");
+assert.ok(newRunnerSixDay.schedule.flatMap(day => day.sessions).filter(session => session.type === "run").every(session => session.runType === "Easy Run" || session.runType === "Long Easy Run"), "new runners do not receive advanced speedwork");
+
+for (const priority of ["strength", "running"]) {
+  const sixDay = scheduler.generateHybridSchedule({ ...baseSetup, hybridPriority: priority, trainingDays: 6, availableDays: [0, 1, 2, 3, 4, 5, 6], twoADayPreference: "occasionally" }, [upper, lower, full]);
+  assert.ok(sixDay.loadSummary.trainingDaysUsed >= 5, `${priority} priority uses five or six intended training days`);
+}
+
+const intentionallyLower = scheduler.generateHybridSchedule({ ...baseSetup, trainingDays: 6, availableDays: [0, 1, 2, 3, 4, 5, 6], twoADayPreference: "no", strengthSessionsTarget: 2, runningSessionsTarget: 2 }, [upper, lower, full]);
+assert.equal(intentionallyLower.loadSummary.trainingDaysUsed, 4, "explicitly lower session targets remain respected");
+assert.match(intentionallyLower.loadSummary.unusedDaysReason, /explicitly requested/i, "unused target days receive a clear reason");
+
+const noMileageRuns = scheduler.buildRunSessions({ ...baseSetup, runPrescriptionStyle: "distance", runningBaseline: { runsPerWeek: 0, weeklyMileage: 0, longestRun: 0, consistency: "not-running" } }, 3);
+assert.ok(noMileageRuns.every(session => session.targetDistance > 0 && session.targetDuration > 0 && session.estimatedDurationLabel && session.rpeTarget), "distance, estimated duration, and RPE exist even without mileage history");
+assert.ok(noMileageRuns.find(session => session.runType === "Long Easy Run")?.targetDistance > 0, "long runs always receive a distance target");
+const knownPacePrescription = scheduler.calculateRunPrescription("Easy Run", { runningDistanceUnit: "mi", runPrescriptionStyle: "distance", advanced: { knownEasyPace: "10:00/mi" } }, { classification: "developing" }, { targetDistance: 4 });
+assert.deepEqual(knownPacePrescription.estimatedDurationRange, { min: 37, max: 43 }, "duration estimation uses a sensible range instead of fake precision");
+assert.match(knownPacePrescription.suggestedPaceRange, /\/mi/, "pace guidance is shown when the profile provides enough data");
+
+const thresholdRuns = scheduler.buildRunSessions({ ...baseSetup, runPrescriptionStyle: "distance" }, 3);
+const thresholdRun = thresholdRuns.find(session => session.runType === "Threshold");
+assert.ok(thresholdRun?.targetDistance > 0 && /3 × 8 min/.test(thresholdRun.structure?.mainSet || ""), "threshold segments coexist with a total distance target");
+
+const metricRuns = scheduler.buildRunSessions({ ...baseSetup, runningDistanceUnit: "km", runPrescriptionStyle: "distance", runningBaseline: { runsPerWeek: 0, weeklyMileage: 0, longestRun: 0, consistency: "not-running" } }, 3);
+assert.ok(metricRuns.every(session => session.estimatedDistanceLabel.endsWith(" km")), "metric athletes receive kilometer prescriptions");
+
+const timeBasedRuns = scheduler.buildRunSessions({ ...baseSetup, runPrescriptionStyle: "time", runningBaseline: { runsPerWeek: 0, weeklyMileage: 0, longestRun: 0, consistency: "not-running" } }, 3);
+assert.ok(timeBasedRuns.every(session => session.prescriptionStyle === "time" && session.targetDuration > 0 && session.targetDistance > 0), "time-based runs retain an estimated distance");
+
+const inventoryForScore = scheduler.buildSessionInventory({ ...baseSetup, trainingDays: 6, availableDays: [0, 1, 2, 3, 4, 5, 6] }, [upper, lower, full]);
+const spreadDays = Array.from({ length: 7 }, (_, dayIndex) => ({ dayIndex, sessions: dayIndex < 6 ? [inventoryForScore[dayIndex]] : [] }));
+const compressedDays = Array.from({ length: 7 }, (_, dayIndex) => ({ dayIndex, sessions: dayIndex < 3 ? inventoryForScore.slice(dayIndex * 2, dayIndex * 2 + 2) : [] }));
+assert.ok(scheduler.scoreHybridSchedule(spreadDays, { ...baseSetup, trainingDays: 6, availableDays: [0, 1, 2, 3, 4, 5, 6] }).score > scheduler.scoreHybridSchedule(compressedDays, { ...baseSetup, trainingDays: 6, availableDays: [0, 1, 2, 3, 4, 5, 6] }).score, "underuse penalty favors six manageable training days over three compressed days");
 const limitedTrainingDays = scheduler.generateHybridSchedule({ ...baseSetup, trainingDays: 3, availableDays: [0, 1, 2, 3, 4, 5, 6], twoADayPreference: "yes" }, [upper, lower, full]);
 assert.ok(limitedTrainingDays.schedule.filter(day => day.sessions.length).length <= 3, "availability does not create more training days than selected");
 const avoided = scheduler.chooseStrengthWorkouts([upper, lower, full], 2, "balanced", { advanced: { exercisesToAvoid: "Back Squat" } });

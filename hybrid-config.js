@@ -3,8 +3,9 @@
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.FleemanHybridConfig = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
-  const SCHEMA_VERSION = 2;
+  const SCHEMA_VERSION = 3;
   const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  const WEEKDAY_IDS = DAYS.map(day => day.toLowerCase());
   const PRIORITIES = {
     strength: { label: "Strength Priority", strengthSessions: 4, runSessions: 2, hardRunLimit: 1, lowerVolumeMultiplier: 1 },
     balanced: { label: "Balanced Hybrid", strengthSessions: 3, runSessions: 3, hardRunLimit: 1, lowerVolumeMultiplier: .85 },
@@ -50,9 +51,17 @@
   ];
 
   function clamp(value, minimum, maximum) { return Math.min(maximum, Math.max(minimum, Number(value) || 0)); }
-  function dayIndex(value) {
-    if (Number.isInteger(Number(value)) && Number(value) >= 0 && Number(value) <= 6) return Number(value);
-    return Math.max(0, DAYS.findIndex(day => day.toLowerCase().startsWith(String(value || "").toLowerCase().slice(0, 3))));
+  function weekdayId(value) {
+    if (value === "" || value == null) return "";
+    if (Number.isInteger(Number(value)) && Number(value) >= 0 && Number(value) <= 6) return WEEKDAY_IDS[Number(value)];
+    const normalized = String(value).trim().toLowerCase();
+    return WEEKDAY_IDS.find(day => day === normalized || day.startsWith(normalized.slice(0, 3))) || "";
   }
-  return { SCHEMA_VERSION, DAYS, PRIORITIES, RUN_BASE_STRESS, RIR_WEIGHTS, SYSTEMIC_COST, CONFLICT, RECOVERY_PENALTIES, INTERVENTION_ORDER, clamp, dayIndex };
+  function dayIndex(value) {
+    const id = weekdayId(value);
+    return id ? WEEKDAY_IDS.indexOf(id) : -1;
+  }
+  function jsDayToHybridIndex(jsDay) { return (Number(jsDay) + 6) % 7; }
+  function hybridIndexToJsDay(index) { return (Number(index) + 1) % 7; }
+  return { SCHEMA_VERSION, DAYS, WEEKDAY_IDS, PRIORITIES, RUN_BASE_STRESS, RIR_WEIGHTS, SYSTEMIC_COST, CONFLICT, RECOVERY_PENALTIES, INTERVENTION_ORDER, clamp, weekdayId, dayIndex, jsDayToHybridIndex, hybridIndexToJsDay };
 });

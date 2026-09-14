@@ -248,7 +248,7 @@ function setCardMarkup(exercise, set, setIndex, previous, unit, entryLabel) {
 }
 
 function sessionExerciseDefinition(exercise) {
-  const workout = data.workouts.find(item => item.id === currentSession.workoutId);
+  const workout = typeof findWorkoutDefinition === "function" ? findWorkoutDefinition(currentSession.workoutId, currentSession.mesocycle) : data.workouts.find(item => item.id === currentSession.workoutId);
   const prescription = exercise.sessionPrescription || workout?.exercises.find(item => item.id === exercise.exerciseId) || data.workouts.flatMap(item=>item.exercises).find(item=>item.id===exercise.exerciseId) || exercise;
   return { prescription, definition: definitionForExercise(prescription) || prescription };
 }
@@ -378,7 +378,7 @@ function enhanceExerciseCard(card, exercise, exerciseIndex) {
     persistActiveWorkout();
   };
   const starting = exercise.startingWeightRecommendation;
-  recommendedField?.insertAdjacentHTML("beforebegin", `<section class="today-prescription"><h4>Today</h4><p><strong>${displayWeightValue(exercise.weight,data.profile?.units)} ${unit}</strong> - ${exercise.sets.length} sets - ${prescription.minReps ?? definition.defaults?.minReps ?? 0} to ${prescription.maxReps ?? definition.defaults?.maxReps ?? 0} ${exerciseRepLabel(exercise)} - Target RIR ${exercise.targetRir}</p>${starting?`<span class="confidence-label">${escapeHtml(starting.label || starting.confidence || "Starting weight")}</span>`:""}<p class="small-note">${escapeHtml(exercise.recommendation || "Use the planned prescription.")}</p></section>`);
+  recommendedField?.insertAdjacentHTML("beforebegin", `<section class="today-prescription"><h4>Today</h4><p><strong>${displayWeightValue(exercise.weight,data.profile?.units)} ${unit}</strong> - ${exercise.sets.length} sets - ${prescription.minReps ?? definition.defaults?.minReps ?? 0} to ${prescription.maxReps ?? definition.defaults?.maxReps ?? 0} ${exerciseRepLabel(exercise)} - Target RIR ${exercise.targetRir}</p>${starting?`<span class="confidence-label">${escapeHtml(starting.label || starting.confidence || "Starting weight")}</span>`:""}<p class="small-note">${escapeHtml(exercise.recommendation || "Use the planned prescription.")}</p>${progressionWhyMarkup(exercise.progressionDecision?.reason)}</section>`);
 
   const actionMenu = document.createElement("details");
   actionMenu.className = "exercise-action-menu";

@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="icon" href="icons/icon-192.png" type="image/png" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=73" />
+  <link rel="stylesheet" href="styles.css?v=78" />
   <title>Fleeman Fitness</title>
 </head>
 <body>
@@ -35,6 +35,10 @@
       <p id="updateMessage">A new version of Fleeman Fitness is available.</p>
       <button id="updateNowButton" class="primary-button compact">Update now</button>
     </aside>
+    <aside id="programActivationStatus" class="program-activation-status hidden" role="status" aria-live="assertive">
+      <strong id="programActivationStatusTitle">PROGRAM STARTED</strong>
+      <span id="programActivationStatusMessage"></span>
+    </aside>
 
     <section id="homeView" class="view active">
       <div class="hero-card dashboard-hero">
@@ -44,6 +48,7 @@
         </div>
         <h2 id="todayWorkoutName">Choose a workout</h2>
         <p id="todayWorkoutSummary">Select one of your saved workouts to begin.</p>
+        <div id="todayProgressionWhy" class="home-progression-why hidden" aria-live="polite"></div>
         <div class="hero-metrics" aria-label="Workout status">
           <div class="hero-progress-metric">
             <span>SET PROGRESS</span>
@@ -463,6 +468,20 @@
     </div>
   </dialog>
 
+  <dialog id="hybridRunEditDialog" aria-labelledby="hybridRunEditTitle">
+    <form id="hybridRunEditForm" class="dialog-card compact-dialog-card" novalidate>
+      <div class="dialog-header"><div><p class="eyebrow">RUNNING ENGINE</p><h2 id="hybridRunEditTitle">Edit scheduled run</h2></div><button id="closeHybridRunEditButton" class="icon-button" type="button" aria-label="Cancel run editing">×</button></div>
+      <div class="hybrid-form-grid">
+        <label>Run type<select name="runType"><option>Easy Run</option><option>Recovery Run</option><option>Long Easy Run</option><option>Threshold</option><option>Tempo</option><option>Intervals</option><option>Hills</option><option>Marathon Pace</option></select></label>
+        <label>Target distance<input name="targetDistance" type="number" min="0.5" max="100" step="0.1" required></label>
+        <label>Target duration (minutes)<input name="targetDuration" type="number" min="10" max="600" step="1" required></label>
+        <label>Target RPE<input name="rpeTarget" placeholder="Example: 3-4" required></label>
+      </div>
+      <p id="hybridRunEditError" class="form-error hidden" role="alert"></p>
+      <div class="program-review-actions"><button class="primary-button" type="submit">Save and recalculate</button><button id="cancelHybridRunEditButton" class="secondary-button" type="button">Cancel</button></div>
+    </form>
+  </dialog>
+
   <dialog id="hybridReadinessDialog" aria-labelledby="hybridReadinessTitle">
     <form id="hybridReadinessForm" class="dialog-card compact-dialog-card" novalidate>
       <div class="dialog-header"><div><p class="eyebrow">DAILY READINESS</p><h2 id="hybridReadinessTitle">Check in before training</h2></div><button id="closeHybridReadinessButton" class="icon-button" type="button" aria-label="Cancel readiness check">×</button></div>
@@ -510,26 +529,28 @@
     </div>
   </template>
 
-  <script src="exercise-library.js?v=73"></script>
-  <script src="bodyweight-exercises.js?v=73"></script>
-  <script src="workout-classifier.js?v=73"></script>
-  <script src="schedule-utils.js?v=73"></script>
-  <script src="active-workout-utils.js?v=73"></script>
-  <script src="program-templates.js?v=73"></script>
-  <script src="starting-weight-rules.js?v=73"></script>
-  <script src="validation.js?v=73"></script>
-  <script src="hybrid-config.js?v=73"></script>
-  <script src="hybrid-stress.js?v=73"></script>
-  <script src="hybrid-progression.js?v=73"></script>
-  <script src="hybrid-recovery.js?v=73"></script>
-  <script src="hybrid-scheduler.js?v=73"></script>
-  <script src="app.js?v=73"></script>
-  <script src="live-workout.js?v=73"></script>
-  <script src="mesocycles.js?v=73"></script>
-  <script src="rolling-cycles.js?v=73"></script>
-  <script src="builder-reliability.js?v=73"></script>
-  <script src="fitness-enhancements.js?v=73"></script>
-  <script src="build-modes.js?v=73"></script>
-  <script src="hybrid-ui.js?v=73"></script>
+  <script src="exercise-library.js?v=75"></script>
+  <script src="bodyweight-exercises.js?v=75"></script>
+  <script src="workout-classifier.js?v=75"></script>
+  <script src="schedule-utils.js?v=75"></script>
+  <script src="active-workout-utils.js?v=75"></script>
+  <script src="program-templates.js?v=75"></script>
+  <script src="starting-weight-rules.js?v=75"></script>
+  <script src="validation.js?v=75"></script>
+  <script src="hybrid-config.js?v=75"></script>
+  <script src="progression-reasons.js?v=78"></script>
+  <script src="hybrid-stress.js?v=78"></script>
+  <script src="hybrid-strength-adapter.js?v=78"></script>
+  <script src="hybrid-progression.js?v=78"></script>
+  <script src="hybrid-recovery.js?v=75"></script>
+  <script src="hybrid-scheduler.js?v=78"></script>
+  <script src="app.js?v=78"></script>
+  <script src="live-workout.js?v=78"></script>
+  <script src="mesocycles.js?v=75"></script>
+  <script src="rolling-cycles.js?v=75"></script>
+  <script src="builder-reliability.js?v=75"></script>
+  <script src="fitness-enhancements.js?v=75"></script>
+  <script src="build-modes.js?v=75"></script>
+  <script src="hybrid-ui.js?v=78"></script>
 </body>
 </html>

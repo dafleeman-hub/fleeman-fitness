@@ -1,9 +1,10 @@
 (function (root, factory) {
   const config = typeof module === "object" && module.exports ? require("./hybrid-config.js") : root.FleemanHybridConfig;
-  const api = factory(config);
+  const reasons = typeof module === "object" && module.exports ? require("./progression-reasons.js") : root.FleemanProgressionReasons;
+  const api = factory(config, reasons);
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.FleemanHybridProgression = api;
-})(typeof globalThis !== "undefined" ? globalThis : this, function (config) {
+})(typeof globalThis !== "undefined" ? globalThis : this, function (config, reasons) {
   function summarizeCompletedRuns(runHistory = [], referenceDate = new Date()) {
     const cutoff = new Date(referenceDate).getTime() - 28 * 86400000;
     const recent = runHistory.filter(run => new Date(run.date).getTime() >= cutoff);
@@ -44,7 +45,8 @@
     else if (summary.completionRate < .6 || summary.fatigueStops >= 2 || summary.averageEasyRpe >= 6 || summary.easyRpeDrift >= 1.5) { decision = "CUT BACK"; volumeMultiplier = .85; reason = "Recent completion, fatigue, or easy-run effort drift supports a lower running load."; }
     else if (summary.recentCount >= 3 && summary.completionRate >= .8 && summary.averageEasyRpe <= 5) { decision = "PROGRESS"; volumeMultiplier = baseline.classification === "new" ? 1.05 : 1.08; lever = "volume"; reason = "Completed running has been consistent and manageable."; }
     else if (summary.recentCount) { reason = "Hold the current running load while consistency develops."; }
-    return { decision, volumeMultiplier, lever, reason, summary };
+    const explanation = reasons.running(decision, summary);
+    return { decision, volumeMultiplier, lever, reason, explanation, longRunIncreased: decision === "PROGRESS" && volumeMultiplier > 1, summary };
   }
 
   function calculateHybridProgressionBudget({ priority = "balanced", runningProgression = {}, strengthEligibility = [], deferred = [] } = {}) {
@@ -53,7 +55,9 @@
     return candidates.map(item => {
       const lowerBody = item.region === "lower";
       const shouldDefer = lowerBody && majorRunningIncrease && ["balanced", "running", "race"].includes(priority) && !item.previouslyDeferred;
-      return { ...item, eligible: true, applied: !shouldDefer, deferred: shouldDefer, reason: shouldDefer ? "HYBRID LOAD MANAGEMENT: earned progression is retained for the next stable week." : item.previouslyDeferred ? "Previously earned progression can be reconsidered this stable week." : "Progression can be applied this week." };
+      const result = { ...item, eligible: true, applied: !shouldDefer, deferred: shouldDefer, reason: shouldDefer ? "HYBRID LOAD MANAGEMENT: earned progression is retained for the next stable week." : item.previouslyDeferred ? "Previously earned progression can be reconsidered this stable week." : "Progression can be applied this week." };
+      result.explanation = reasons.strengthBudget(result, runningProgression);
+      return result;
     });
   }
 
@@ -61,7 +65,10 @@
     const running = calculateRunningProgression(runHistory, baseline);
     const decision = running.decision === "RECOVER" || recoveryWeeks >= 2 ? "RECOVERY WEEK" : running.decision;
     const strengthBudget = calculateHybridProgressionBudget({ priority, runningProgression: running, strengthEligibility, deferred: deferredStrengthProgression });
-    return { decision, running, strengthBudget, strengthVolumeMultiplier: decision === "RECOVERY WEEK" ? .68 : decision === "CUT BACK" ? .82 : 1, runningVolumeMultiplier: decision === "RECOVERY WEEK" ? .75 : running.volumeMultiplier };
+    const explanation = decision === "RECOVERY WEEK" && running.decision !== "RECOVER"
+      ? reasons.create(reasons.CODES.RECOVERY_WEEK_TRIGGERED, { recoveryWeeks: Number(recoveryWeeks || 0) })
+      : running.explanation;
+    return { decision, explanation, running, strengthBudget, strengthVolumeMultiplier: decision === "RECOVERY WEEK" ? .68 : decision === "CUT BACK" ? .82 : 1, runningVolumeMultiplier: decision === "RECOVERY WEEK" ? .75 : running.volumeMultiplier };
   }
   return { summarizeCompletedRuns, calculateRunningProgression, calculateHybridProgressionBudget, weeklyDecision };
 });

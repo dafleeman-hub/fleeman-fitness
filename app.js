@@ -1,8 +1,9 @@
 
 const STORAGE_KEY = "fleemanFitnessDataV1";
-const APP_VERSION = "1.7.1-beta";
+const APP_VERSION = "1.9.0-prototype";
 let previewReturnFocus = null;
 let previewScrollPosition = 0;
+let workoutEditorContext = null;
 const defaultData = {
   settings: { increment: 5, rest: 90, autoCollapseExercises: true, restTimerAlerts: { vibration: true, tone: false } },
   ui: { activeView: "homeView", librarySection: "premade" },
@@ -301,17 +302,21 @@ function recommendationFor(exercise) {
   const missedBottom = completed.some(s => s.reps < exercise.minReps);
   const hard = prior.feedback === "very-hard" || prior.feedback === "failed";
   const increment = Number(exercise.increment ?? data.settings.increment);
+  let progressionDecision = null;
   let recommendation = allAtTop && !hard
     ? { weight: Number(prior.weight) + increment, note: `Increase by ${increment} lb` }
     : missedBottom || prior.feedback === "failed"
       ? { weight: Math.max(0, Number(prior.weight) - increment), note: "Reduce slightly and rebuild" }
       : { weight: Number(prior.weight), note: "Keep weight, add reps" };
+  if (allAtTop && !hard) progressionDecision = { action: "progress", previousWeight: Number(prior.weight), newWeight: recommendation.weight, reason: FleemanProgressionReasons.create(FleemanProgressionReasons.CODES.GOOD_STRENGTH_PERFORMANCE, { exerciseId: exercise.id, previousWeight: Number(prior.weight), newWeight: recommendation.weight }) };
+  if (missedBottom || prior.feedback === "failed") progressionDecision = { action: "cut-back", previousWeight: Number(prior.weight), newWeight: recommendation.weight, reason: FleemanProgressionReasons.create(FleemanProgressionReasons.CODES.TARGET_NOT_MET, { exerciseId: exercise.id, previousWeight: Number(prior.weight), newWeight: recommendation.weight }) };
   const pain = jointPainPlanFor(exercise.id);
   if (pain.rating === 2) recommendation = { weight: Number(prior.weight), note: "Minor discomfort reported — monitor the joint", pain };
   if (pain.rating === 3) recommendation = { weight: Math.max(0, Math.round(Number(prior.weight) * .925 / 2.5) * 2.5), note: "Noticeable pain — reduced load; review technique", pain };
   if (pain.rating === 4) recommendation = { weight: Math.max(0, Math.round(Number(prior.weight) * .825 / 2.5) * 2.5), note: "Significant pain — replacement recommended", pain };
   if (pain.rating >= 5) recommendation = { weight: 0, note: "Severe pain — replacement or skip required", pain };
-  return { ...recommendation, pain: recommendation.pain || pain };
+  if (pain.rating >= 2) progressionDecision = { action: pain.rating >= 3 ? "cut-back" : "hold", previousWeight: Number(prior.weight), newWeight: recommendation.weight, reason: FleemanProgressionReasons.create(FleemanProgressionReasons.CODES.PAIN_REPORTED, { exerciseId: exercise.id, painRating: pain.rating, joints: [...(pain.joints || [])] }) };
+  return { ...recommendation, pain: recommendation.pain || pain, progressionDecision };
 }
 
 function renderAll() {
@@ -373,6 +378,8 @@ function renderUpdateNotice() {
 
 function renderHome() {
   const selected = data.workouts.find(w => w.id === data.selectedWorkoutId);
+  const progressionWhy = document.querySelector("#todayProgressionWhy");
+  if (progressionWhy) { progressionWhy.innerHTML = ""; progressionWhy.classList.add("hidden"); }
   document.querySelector("#todayWorkoutName").textContent = selected?.name || "Choose a workout";
   document.querySelector("#todayWorkoutSummary").textContent = selected
     ? `${selected.exercises.length} exercises • ${selected.notes || "Ready to train"}`
@@ -888,7 +895,8 @@ function renderHistory() {
     const rollingContext = h.mesocycle?.scheduleType === "rolling"
       ? `<p class="small-note"><strong>Rolling Cycle</strong> • Cycle ${h.mesocycle.cycle || h.mesocycle.week} • Day ${h.mesocycle.cycleDay || Number(h.mesocycle.slot) + 1} of ${h.mesocycle.cycleLength} • ${h.mesocycle.phase === "deload" ? "Deload" : "Normal"}</p>`
       : h.mesocycle ? `<p class="small-note"><strong>Weekly Schedule</strong> • Week ${h.mesocycle.week}</p>` : "";
-    const statusText = h.type === "run" ? `${Number(h.run?.completedDistance || 0).toFixed(1)} ${escapeHtml(h.run?.distanceUnit || "mi")} • ${escapeHtml(h.run?.completedDuration || "Duration not entered")} • RPE ${Number(h.run?.rpe || 0)} • ${escapeHtml(h.run?.completion || "completed")}` : h.type === "rest-day" ? `Planned rest day • ${escapeHtml(h.scheduleStatus || "completed")}` : h.type === "extra-rest-day" ? "Extra rest day • Original cycle numbering unchanged" : h.type === "skipped-workout" ? `Skipped workout${h.skipReason ? ` • ${escapeHtml(h.skipReason)}` : ""}` : "";
+    const runUnit = escapeHtml(h.run?.distanceUnit || "mi");
+    const statusText = h.type === "run" ? `Planned: ${Number(h.run?.plannedDistance || 0).toFixed(1)} ${runUnit} • Completed: ${Number(h.run?.completedDistance || 0).toFixed(1)} ${runUnit} • Duration: ${escapeHtml(h.run?.completedDuration || "Not entered")} • Average pace: ${escapeHtml(h.run?.averagePace || "Not entered")} • RPE ${Number(h.run?.rpe || 0)} • ${escapeHtml(h.run?.completion || "completed")}` : h.type === "rest-day" ? `Planned rest day • ${escapeHtml(h.scheduleStatus || "completed")}` : h.type === "extra-rest-day" ? "Extra rest day • Original cycle numbering unchanged" : h.type === "skipped-workout" ? `Skipped workout${h.skipReason ? ` • ${escapeHtml(h.skipReason)}` : ""}` : "";
     const el = document.createElement("article");
     el.className = "history-card";
     el.innerHTML = `
@@ -926,8 +934,13 @@ function renderHistoryExerciseIndex() {
   });
 }
 
-function openWorkoutEditor(workout = null) {
-  document.querySelector("#workoutDialogTitle").textContent = workout ? "Edit workout" : "New workout";
+function openWorkoutEditor(workout = null, options = {}) {
+  workoutEditorContext = {
+    saveToLibrary: options.saveToLibrary !== false,
+    onSave: typeof options.onSave === "function" ? options.onSave : null,
+    onCancel: typeof options.onCancel === "function" ? options.onCancel : null
+  };
+  document.querySelector("#workoutDialogTitle").textContent = options.title || (workout ? "Edit workout" : "New workout");
   document.querySelector("#editingWorkoutId").value = workout?.id || "";
   document.querySelector("#workoutNameInput").value = workout?.name || "";
   document.querySelector("#workoutNotesInput").value = workout?.notes || "";
@@ -942,6 +955,9 @@ function openWorkoutEditor(workout = null) {
 function cancelWorkoutEditor() {
   if (!confirm("Cancel workout editing? Any unsaved changes will be lost.")) return;
   document.querySelector("#workoutDialog").close();
+  const callback = workoutEditorContext?.onCancel;
+  workoutEditorContext = null;
+  callback?.();
 }
 
 function addExerciseEditor(exercise = {}) {
@@ -1097,6 +1113,7 @@ function openWorkoutPreview(workout, options = {}) {
   document.querySelector("#workoutPreviewContent").innerHTML = `
     <p>${escapeHtml(workout.notes || "Review the complete planned workout before starting.")}</p>
     ${options.adjustmentReason ? `<p class="small-note"><strong>Current adjustment:</strong> ${escapeHtml(options.adjustmentReason)}</p>` : ""}
+    ${options.extraSummary || ""}
     <div class="preview-summary">
       <div class="summary-stat"><strong>${totals.estimatedMinutes} min</strong><span>Estimated time</span></div>
       <div class="summary-stat"><strong>${totals.exerciseCount}</strong><span>Exercises</span></div>
@@ -1123,7 +1140,7 @@ function openWorkoutPreview(workout, options = {}) {
     closeWorkoutPreview();
   });
   document.querySelector("#savePreviewCopyButton")?.addEventListener("click", () => savePremadeWorkoutCopy(workout));
-  document.querySelector("#editFromPreviewButton")?.addEventListener("click", () => { closeWorkoutPreview(); openWorkoutEditor(workout); });
+  document.querySelector("#editFromPreviewButton")?.addEventListener("click", () => { closeWorkoutPreview(); if (options.editAction) options.editAction(); else openWorkoutEditor(workout); });
   document.querySelector("#backFromPreviewButton").addEventListener("click", closeWorkoutPreview);
   const dialog = document.querySelector("#workoutPreviewDialog");
   dialog.showModal();
@@ -1203,9 +1220,19 @@ function updateRecoveryRecommendation() {
   panel.innerHTML = `<h3>${pendingSorenessPlan.hasAdjustment ? "Review adjusted workout" : "Continue as planned"}</h3>${notes.join("") || "<p>No soreness adjustments are recommended.</p>"}`;
 }
 
+function findWorkoutDefinition(id, context = null) {
+  const saved = data.workouts.find(item => item.id === id);
+  if (saved) return saved;
+  const programs = [data.hybridPrograms?.active, ...(data.hybridPrograms?.drafts || []), ...(data.hybridPrograms?.completed || [])].filter(Boolean);
+  const requestedProgram = context?.hybridProgramId ? programs.find(program => program.id === context.hybridProgramId) : null;
+  return requestedProgram?.strengthWorkouts?.find(item => item.id === id)
+    || programs.flatMap(program => program.strengthWorkouts || []).find(item => item.id === id)
+    || null;
+}
+
 function validateSorenessCheckIn() {
   const result = FormValidation.createResult();
-  const workout = data.workouts.find(item => item.id === pendingWorkoutId);
+  const workout = findWorkoutDefinition(pendingWorkoutId, pendingWorkoutContext);
   workoutMuscles(workout).forEach(muscle => {
     if (sorenessAnswers[muscle] == null) FormValidation.addError(result, `soreness.${muscle}`, `Choose a soreness rating for ${sorenessLabel(muscle)}.`);
   });
@@ -1216,7 +1243,7 @@ function validateSorenessCheckIn() {
 
 function previewAdjustedWorkout(trigger) {
   if (!pendingWorkoutId || !pendingSorenessPlan) return;
-  const original = data.workouts.find(workout => workout.id === pendingWorkoutId);
+  const original = findWorkoutDefinition(pendingWorkoutId, pendingWorkoutContext);
   const adjusted = structuredClone(original);
   adjusted.exercises = adjusted.exercises.map(exercise => {
     const change = pendingSorenessPlan.changes.find(item => item.exerciseId === exercise.id);
@@ -1237,7 +1264,7 @@ function previewAdjustedWorkout(trigger) {
 }
 
 function startWorkout(id, context = null) {
-  const workout = data.workouts.find(item => item.id === id);
+  const workout = findWorkoutDefinition(id, context);
   if (!workout) return;
   const recoveryPeriod = context?.scheduleType === "rolling" ? Number(context.cycle) : Number(context?.week);
   if (!context || recoveryPeriod < 2) {
@@ -1265,7 +1292,7 @@ function startWorkout(id, context = null) {
 }
 
 function beginWorkout(id, sorenessRecord, context = pendingWorkoutContext, decision = "original") {
-  const workout = data.workouts.find(w => w.id === id);
+  const workout = findWorkoutDefinition(id, context);
   if (!workout) return;
   data.selectedWorkoutId = id;
   currentSession = {
@@ -1296,6 +1323,9 @@ function beginWorkout(id, sorenessRecord, context = pendingWorkoutContext, decis
       const hybridHeldWeight = context?.scheduleType === "hybrid" && context.hybridAdjustment?.holdProgression
         ? Number(latestExerciseResult(e.id)?.weight ?? e.startWeight ?? rec.weight)
         : null;
+      const progressionDecision = hybridHeldWeight != null
+        ? context.hybridAdjustment?.progressionDecision || { action: "deferred", reason: FleemanProgressionReasons.create(FleemanProgressionReasons.CODES.HYBRID_CONFLICT, { exerciseId: e.id }) }
+        : rec.progressionDecision || null;
       return {
         exerciseId: e.id,
         libraryExerciseId: e.libraryExerciseId || null,
@@ -1305,6 +1335,7 @@ function beginWorkout(id, sorenessRecord, context = pendingWorkoutContext, decis
         repUnit: exerciseRepUnit(e),
         weight: hybridHeldWeight ?? prescription?.weight ?? rec.weight,
         recommendation: hybridHeldWeight != null ? "Hybrid load management: hold weight progression for this session." : rec.note,
+        progressionDecision: progressionDecision ? structuredClone(progressionDecision) : null,
         hybridAdjustment: context?.scheduleType === "hybrid" ? structuredClone(context.hybridAdjustment || {}) : null,
         startingWeightRecommendation: structuredClone(starting),
         calibrationAttempts: [],
@@ -1333,7 +1364,7 @@ function renderSession() {
   document.querySelector("#sessionWorkoutName").textContent = currentSession.workoutName;
   const list = document.querySelector("#sessionExerciseList");
   list.innerHTML = "";
-  const workout = data.workouts.find(w => w.id === currentSession.workoutId);
+  const workout = findWorkoutDefinition(currentSession.workoutId, currentSession.mesocycle);
 
   currentSession.exercises.forEach((ex, exIndex) => {
     const definition = ex.sessionPrescription || workout.exercises.find(e => e.id === ex.exerciseId) || data.workouts.flatMap(item => item.exercises).find(e => e.id === ex.exerciseId);
@@ -1477,6 +1508,12 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 }
 
+function progressionWhyMarkup(explanation, options={}) {
+  if (!explanation?.shortText) return "";
+  const expanded = options.expanded === true;
+  return `<details class="progression-why" ${expanded ? "open" : ""}><summary><span>WHY?</span><strong>${escapeHtml(explanation.shortText)}</strong></summary>${explanation.longText ? `<p>${escapeHtml(explanation.longText)}</p>` : ""}</details>`;
+}
+
 function applyMissingWeightRecommendations(exercises){let count=0;exercises.forEach(exercise=>{if(latestExerciseResult(exercise.id)||Number(exercise.startWeight)>0)return;const recommendation=startingWeightRecommendation(exercise);exercise.startingWeightRecommendation=recommendation;if(recommendation.weight>0){exercise.startWeight=recommendation.weight;count++;}});data.profile.recalculationHistory.push({date:new Date().toISOString(),updatedExercises:count});saveData();return count;}
 function standardRecalculationExercises(){return[...data.workouts.flatMap(workout=>workout.exercises),...data.mesocycles.drafts.flatMap(meso=>meso.schedule.flatMap(slot=>slot.workout.exercises))];}
 function activeMesocycleExercises(){return data.mesocycles?.active?.schedule?.flatMap(slot=>slot.workout.exercises)||[];}
@@ -1583,7 +1620,7 @@ document.querySelector("#startRecommendedButton").onclick = () => {
   if (!pendingSorenessPlan || !pendingWorkoutId) return;
   const workoutId = pendingWorkoutId;
   const workoutContext = pendingWorkoutContext;
-  const soreness = { ratings: structuredClone(sorenessAnswers), changes: structuredClone(pendingSorenessPlan.changes), decision: "accepted", date: new Date().toISOString(), week: workoutContext?.week, cycle: workoutContext?.cycle, cycleDay: workoutContext?.cycleDay, scheduleType: workoutContext?.scheduleType, workoutName: data.workouts.find(w=>w.id===workoutId)?.name };
+  const soreness = { ratings: structuredClone(sorenessAnswers), changes: structuredClone(pendingSorenessPlan.changes), decision: "accepted", date: new Date().toISOString(), week: workoutContext?.week, cycle: workoutContext?.cycle, cycleDay: workoutContext?.cycleDay, scheduleType: workoutContext?.scheduleType, workoutName: findWorkoutDefinition(workoutId, workoutContext)?.name };
   document.querySelector("#recoveryDialog").close();
   pendingWorkoutId = null;
   recommendedWorkoutId = null;
@@ -1593,7 +1630,7 @@ document.querySelector("#startRecommendedButton").onclick = () => {
 document.querySelector("#skipSoreMusclesButton").onclick = () => {
   if (!pendingSorenessPlan || !pendingWorkoutId) return;
   const workoutId = pendingWorkoutId, workoutContext = pendingWorkoutContext;
-  const soreness = { ratings: structuredClone(sorenessAnswers), changes: structuredClone(pendingSorenessPlan.changes), decision: "skipped high-soreness muscles", date: new Date().toISOString(), week: workoutContext?.week, cycle: workoutContext?.cycle, cycleDay: workoutContext?.cycleDay, scheduleType: workoutContext?.scheduleType, workoutName: data.workouts.find(w=>w.id===workoutId)?.name };
+  const soreness = { ratings: structuredClone(sorenessAnswers), changes: structuredClone(pendingSorenessPlan.changes), decision: "skipped high-soreness muscles", date: new Date().toISOString(), week: workoutContext?.week, cycle: workoutContext?.cycle, cycleDay: workoutContext?.cycleDay, scheduleType: workoutContext?.scheduleType, workoutName: findWorkoutDefinition(workoutId, workoutContext)?.name };
   document.querySelector("#recoveryDialog").close(); pendingWorkoutId=null; pendingWorkoutContext=null; pendingSorenessPlan=null;
   beginWorkout(workoutId, soreness, workoutContext, "skip-high");
 };
@@ -1602,7 +1639,7 @@ document.querySelector("#startOriginalButton").onclick = () => {
   const workoutId = pendingWorkoutId;
   const workoutContext = pendingWorkoutContext;
   if (!validateSorenessCheckIn()) return;
-  const soreness = { ratings: structuredClone(sorenessAnswers), changes: structuredClone(pendingSorenessPlan?.changes || []), decision: "ignored", date: new Date().toISOString(), week: workoutContext?.week, cycle: workoutContext?.cycle, cycleDay: workoutContext?.cycleDay, scheduleType: workoutContext?.scheduleType, workoutName: data.workouts.find(w=>w.id===workoutId)?.name };
+  const soreness = { ratings: structuredClone(sorenessAnswers), changes: structuredClone(pendingSorenessPlan?.changes || []), decision: "ignored", date: new Date().toISOString(), week: workoutContext?.week, cycle: workoutContext?.cycle, cycleDay: workoutContext?.cycleDay, scheduleType: workoutContext?.scheduleType, workoutName: findWorkoutDefinition(workoutId, workoutContext)?.name };
   document.querySelector("#recoveryDialog").close();
   pendingWorkoutId = null;
   recommendedWorkoutId = null;
@@ -1646,12 +1683,17 @@ document.querySelector("#workoutForm").onsubmit = event => {
     notes: document.querySelector("#workoutNotesInput").value.trim(),
     exercises
   };
-  const existing = data.workouts.findIndex(w => w.id === id);
-  if (existing >= 0) data.workouts[existing] = workout;
-  else data.workouts.push(workout);
-  data.selectedWorkoutId = id;
+  const context = workoutEditorContext || { saveToLibrary: true };
+  if (context.saveToLibrary) {
+    const existing = data.workouts.findIndex(w => w.id === id);
+    if (existing >= 0) data.workouts[existing] = workout;
+    else data.workouts.push(workout);
+    data.selectedWorkoutId = id;
+  }
   document.querySelector("#workoutDialog").close();
-  saveData();
+  workoutEditorContext = null;
+  if (context.saveToLibrary) saveData();
+  context.onSave?.(structuredClone(workout));
 };
 
 document.querySelector("#defaultIncrement").onchange = e => {
