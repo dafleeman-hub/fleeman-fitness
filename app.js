@@ -1,6 +1,6 @@
 
 const STORAGE_KEY = "fleemanFitnessDataV1";
-const APP_VERSION = "1.9.1-prototype";
+const APP_VERSION = "1.9.2-prototype";
 let previewReturnFocus = null;
 let previewScrollPosition = 0;
 let workoutEditorContext = null;
@@ -233,18 +233,30 @@ function saveData() {
   renderAll();
 }
 
-function latestExerciseResult(exerciseId) {
+function exerciseResultMatches(result, exercise) {
+  if (!result || !exercise) return false;
+  const target = typeof exercise === "string" ? { id: exercise } : exercise;
+  const exerciseId = target.exerciseId || target.id;
+  if (exerciseId && result.exerciseId === exerciseId) return true;
+  const definition = typeof exercise === "string" ? null : definitionForExercise(target);
+  const libraryExerciseId = target.libraryExerciseId || definition?.id || null;
+  if (libraryExerciseId && result.libraryExerciseId === libraryExerciseId) return true;
+  const exerciseName = normalizedExerciseName(target.name || definition?.name || "");
+  return Boolean(exerciseName && normalizedExerciseName(result.name || result.exerciseName || "") === exerciseName);
+}
+
+function latestExerciseResult(exercise) {
   for (const session of data.history) {
-    const result = session.exercises.find(e => e.exerciseId === exerciseId);
+    const result = session.exercises.find(item => exerciseResultMatches(item, exercise));
     if (result) return result;
   }
   return null;
 }
 
-function jointPainPlanFor(exerciseId) {
+function jointPainPlanFor(exercise) {
   const results = data.history.flatMap(session => session.exercises
-    .filter(exercise => exercise.exerciseId === exerciseId && exercise.jointPain)
-    .map(exercise => ({ ...exercise.jointPain, week: session.mesocycle?.week, mesocycleId: session.mesocycle?.mesocycleId })));
+    .filter(result => exerciseResultMatches(result, exercise) && result.jointPain)
+    .map(result => ({ ...result.jointPain, week: session.mesocycle?.week, mesocycleId: session.mesocycle?.mesocycleId })));
   if (!results.length) return { rating: 1, joints: [], note: "" };
   const latest = results[0];
   let rating = Number(latest.rating || 1);
@@ -294,7 +306,7 @@ function startingWeightRecommendation(exercise){
 }
 
 function recommendationFor(exercise) {
-  const prior = latestExerciseResult(exercise.id);
+  const prior = latestExerciseResult(exercise);
   if (!prior) {const starting=exercise.startingWeightRecommendation|| (Number(exercise.startWeight)>0?recommendationResult(exercise.startWeight,"Saved starting weight","Saved with this workout prescription.","medium",false):startingWeightRecommendation(exercise));return{weight:starting.weight,note:starting.label,starting};}
 
   const completed = prior.sets.filter(s => s.done);
@@ -310,7 +322,7 @@ function recommendationFor(exercise) {
       : { weight: Number(prior.weight), note: "Keep weight, add reps" };
   if (allAtTop && !hard) progressionDecision = { action: "progress", previousWeight: Number(prior.weight), newWeight: recommendation.weight, reason: FleemanProgressionReasons.create(FleemanProgressionReasons.CODES.GOOD_STRENGTH_PERFORMANCE, { exerciseId: exercise.id, previousWeight: Number(prior.weight), newWeight: recommendation.weight }) };
   if (missedBottom || prior.feedback === "failed") progressionDecision = { action: "cut-back", previousWeight: Number(prior.weight), newWeight: recommendation.weight, reason: FleemanProgressionReasons.create(FleemanProgressionReasons.CODES.TARGET_NOT_MET, { exerciseId: exercise.id, previousWeight: Number(prior.weight), newWeight: recommendation.weight }) };
-  const pain = jointPainPlanFor(exercise.id);
+  const pain = jointPainPlanFor(exercise);
   if (pain.rating === 2) recommendation = { weight: Number(prior.weight), note: "Minor discomfort reported — monitor the joint", pain };
   if (pain.rating === 3) recommendation = { weight: Math.max(0, Math.round(Number(prior.weight) * .925 / 2.5) * 2.5), note: "Noticeable pain — reduced load; review technique", pain };
   if (pain.rating === 4) recommendation = { weight: Math.max(0, Math.round(Number(prior.weight) * .825 / 2.5) * 2.5), note: "Significant pain — replacement recommended", pain };
@@ -1183,7 +1195,7 @@ function buildSorenessPlan(workout) {
     if (severity === 2) {
       adjusted.sets = Math.max(1, Math.floor(original.sets * .75));
       adjusted.targetRir = original.targetRir + 1;
-      const prior = latestExerciseResult(exercise.id);
+      const prior = latestExerciseResult(exercise);
       if (prior) adjusted.weight = Math.min(adjusted.weight, Number(prior.weight));
     }
     if (severity === 3) {
@@ -1321,7 +1333,7 @@ function beginWorkout(id, sorenessRecord, context = pendingWorkoutContext, decis
       if (pain.rating === 4) plannedRir = Math.max(4, plannedRir);
       if (pain.rating >= 4) plannedSets = 0;
       const hybridHeldWeight = context?.scheduleType === "hybrid" && context.hybridAdjustment?.holdProgression
-        ? Number(latestExerciseResult(e.id)?.weight ?? e.startWeight ?? rec.weight)
+        ? Number(latestExerciseResult(e)?.weight ?? e.startWeight ?? rec.weight)
         : null;
       const progressionDecision = hybridHeldWeight != null
         ? context.hybridAdjustment?.progressionDecision || { action: "deferred", reason: FleemanProgressionReasons.create(FleemanProgressionReasons.CODES.HYBRID_CONFLICT, { exerciseId: e.id }) }
@@ -1349,7 +1361,7 @@ function beginWorkout(id, sorenessRecord, context = pendingWorkoutContext, decis
         priorPainPlan: pain,
         painRecommendationDecision: pain.rating >= 4 ? "pending" : pain.rating === 3 ? "accepted" : "none",
         reducedPainSets,
-        originalPrescription: { sets: Number(e.sets), weight: Number(rec.pain?.rating >= 3 ? latestExerciseResult(e.id)?.weight ?? e.startWeight : rec.weight), targetRir: Number(e.targetRir ?? 3) },
+        originalPrescription: { sets: Number(e.sets), weight: Number(rec.pain?.rating >= 3 ? latestExerciseResult(e)?.weight ?? e.startWeight : rec.weight), targetRir: Number(e.targetRir ?? 3) },
         sets: Array.from({ length: plannedSets }, () => ({ reps: e.minReps, done: false }))
       };
     }).filter(exercise => exercise.sets.length > 0 || exercise.priorPainPlan.rating >= 4)
@@ -1514,7 +1526,7 @@ function progressionWhyMarkup(explanation, options={}) {
   return `<details class="progression-why" ${expanded ? "open" : ""}><summary><span>WHY?</span><strong>${escapeHtml(explanation.shortText)}</strong></summary>${explanation.longText ? `<p>${escapeHtml(explanation.longText)}</p>` : ""}</details>`;
 }
 
-function applyMissingWeightRecommendations(exercises){let count=0;exercises.forEach(exercise=>{if(latestExerciseResult(exercise.id)||Number(exercise.startWeight)>0)return;const recommendation=startingWeightRecommendation(exercise);exercise.startingWeightRecommendation=recommendation;if(recommendation.weight>0){exercise.startWeight=recommendation.weight;count++;}});data.profile.recalculationHistory.push({date:new Date().toISOString(),updatedExercises:count});saveData();return count;}
+function applyMissingWeightRecommendations(exercises){let count=0;exercises.forEach(exercise=>{if(latestExerciseResult(exercise)||Number(exercise.startWeight)>0)return;const recommendation=startingWeightRecommendation(exercise);exercise.startingWeightRecommendation=recommendation;if(recommendation.weight>0){exercise.startWeight=recommendation.weight;count++;}});data.profile.recalculationHistory.push({date:new Date().toISOString(),updatedExercises:count});saveData();return count;}
 function standardRecalculationExercises(){return[...data.workouts.flatMap(workout=>workout.exercises),...data.mesocycles.drafts.flatMap(meso=>meso.schedule.flatMap(slot=>slot.workout.exercises))];}
 function activeMesocycleExercises(){return data.mesocycles?.active?.schedule?.flatMap(slot=>slot.workout.exercises)||[];}
 
@@ -1605,7 +1617,7 @@ document.querySelector("#restartProfileButton").onclick=()=>{if(confirm("Restart
 document.querySelector("#recalculateWeightsButton").onclick=()=>{const count=applyMissingWeightRecommendations(standardRecalculationExercises());alert(`${count} missing starting weights were recalculated. Your active mesocycle was not changed automatically.`);};
 document.querySelector("#keepActiveWeightsButton").onclick=()=>alert("Current active-mesocycle weights were kept. Future recommendations can still use your updated profile.");
 document.querySelector("#recalculateActiveMissingButton").onclick=()=>{if(!data.mesocycles?.active)return;const count=applyMissingWeightRecommendations(activeMesocycleExercises());alert(`${count} active-mesocycle exercises without usable history received a starting-weight recommendation. Completed history was not changed.`);};
-document.querySelector("#reviewActiveWeightChangesButton").onclick=()=>{const suggestions=activeMesocycleExercises().filter(exercise=>!latestExerciseResult(exercise.id)).map(exercise=>({exercise,recommendation:startingWeightRecommendation(exercise)}));document.querySelector("#activeWeightChangeReview").innerHTML=suggestions.length?`<strong>Suggested review</strong>${suggestions.slice(0,20).map(item=>`<p>${escapeHtml(item.exercise.name)}: ${item.recommendation.weight?`${displayWeightValue(item.recommendation.weight,data.profile.units)} ${weightUnit(data.profile.units)}`:escapeHtml(item.recommendation.label)} — ${escapeHtml(item.recommendation.label)}</p>`).join("")}`:"No active exercises need a profile-based review.";};
+document.querySelector("#reviewActiveWeightChangesButton").onclick=()=>{const suggestions=activeMesocycleExercises().filter(exercise=>!latestExerciseResult(exercise)).map(exercise=>({exercise,recommendation:startingWeightRecommendation(exercise)}));document.querySelector("#activeWeightChangeReview").innerHTML=suggestions.length?`<strong>Suggested review</strong>${suggestions.slice(0,20).map(item=>`<p>${escapeHtml(item.exercise.name)}: ${item.recommendation.weight?`${displayWeightValue(item.recommendation.weight,data.profile.units)} ${weightUnit(data.profile.units)}`:escapeHtml(item.recommendation.label)} — ${escapeHtml(item.recommendation.label)}</p>`).join("")}`:"No active exercises need a profile-based review.";};
 document.querySelector("#exportProfileButton").onclick=()=>{const blob=new Blob([JSON.stringify({profile:data.profile},null,2)],{type:"application/json"});const link=document.createElement("a");link.href=URL.createObjectURL(blob);link.download=`fleeman-fitness-profile-${new Date().toISOString().slice(0,10)}.json`;link.click();URL.revokeObjectURL(link.href);};
 document.querySelector("#closeWorkoutPreviewButton").onclick = closeWorkoutPreview;
 document.querySelector("#workoutPreviewDialog").addEventListener("cancel", event => { event.preventDefault(); closeWorkoutPreview(); });

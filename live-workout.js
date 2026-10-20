@@ -187,7 +187,7 @@ function startLiveWorkoutClock() {
 }
 
 function matchesExerciseResult(result, exercise) {
-  return Boolean(result && ((exercise.libraryExerciseId && result.libraryExerciseId === exercise.libraryExerciseId) || normalizedExerciseName(result.name) === normalizedExerciseName(exercise.name)));
+  return exerciseResultMatches(result, exercise);
 }
 
 function exactExerciseHistory(exercise) {

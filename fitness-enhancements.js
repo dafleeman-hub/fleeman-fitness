@@ -439,7 +439,7 @@ startingWeightRecommendation = function(exercise) {
 };
 
 recommendationFor = function(exercise) {
-  const mode=exercise.progressionMode||definitionForExercise(exercise)?.progressionMode||"manual",entry=exerciseLoadType(exercise),prior=latestExerciseResult(exercise.id);
+  const mode=exercise.progressionMode||definitionForExercise(exercise)?.progressionMode||"manual",entry=exerciseLoadType(exercise),prior=latestExerciseResult(exercise);
   if(!prior)return fitnessLegacy.recommendationFor(exercise);
   const completed=(prior.sets||[]).filter(set=>set.done),allAtTop=completed.length===(prior.sets||[]).length&&completed.every(set=>Number(set.reps)>=Number(exercise.maxReps));
   if(mode==="reps"||mode==="harder_variation")return{weight:isStandardBodyweight(entry)?0:Number(prior.weight)||0,note:allAtTop?(exercise.name==="Hand-Release Push-Up"?"Keep bodyweight and improve repeatable reps":"Top of range reached — add reps, or review a harder variation or added load before changing the exercise"):"Keep the variation and add reps"};

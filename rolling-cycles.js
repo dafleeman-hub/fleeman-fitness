@@ -959,7 +959,7 @@ duplicateMesocycle = function (source) {
     if (slot.workout) {
       slot.workout.id = crypto.randomUUID();
       slot.workout.exercises = slot.workout.exercises.map(exercise => {
-        const prior = latestExerciseResult(exercise.id);
+        const prior = latestExerciseResult(exercise);
         return { ...exercise, id: crypto.randomUUID(), startWeight: prior ? recommendationFor(exercise).weight : exercise.startWeight };
       });
     }
