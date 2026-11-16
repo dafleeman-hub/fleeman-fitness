@@ -439,6 +439,7 @@ startingWeightRecommendation = function(exercise) {
 };
 
 recommendationFor = function(exercise) {
+  if(exercise.deloadPrescription?.active)return fitnessLegacy.recommendationFor(exercise);
   const mode=exercise.progressionMode||definitionForExercise(exercise)?.progressionMode||"manual",entry=exerciseLoadType(exercise),prior=latestExerciseResult(exercise);
   if(!prior)return fitnessLegacy.recommendationFor(exercise);
   const completed=(prior.sets||[]).filter(set=>set.done),allAtTop=completed.length===(prior.sets||[]).length&&completed.every(set=>Number(set.reps)>=Number(exercise.maxReps));

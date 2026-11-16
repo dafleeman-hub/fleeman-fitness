@@ -1,6 +1,6 @@
 
 const STORAGE_KEY = "fleemanFitnessDataV1";
-const APP_VERSION = "1.9.2-prototype";
+const APP_VERSION = "1.9.3-prototype";
 let previewReturnFocus = null;
 let previewScrollPosition = 0;
 let workoutEditorContext = null;
@@ -305,9 +305,23 @@ function startingWeightRecommendation(exercise){
   return recommendationResult(0,"Starting weight needed","Not enough reliable information is available. Complete a calibration set or enter a weight manually.","calibration",true);
 }
 
+function applyDeloadRecommendation(exercise,recommendation,prior=null) {
+  if(!exercise.deloadPrescription?.active)return recommendation;
+  const cap=Math.max(0,Number(exercise.deloadPrescription.reducedWeight??exercise.startWeight)||0);
+  const painRating=Number(recommendation.pain?.rating||1);
+  const reducedWeight=Math.min(Math.max(0,Number(recommendation.weight)||0),cap);
+  const deloadReason={code:"deload-week",shortText:"Deload week reduces load and pauses progression.",longText:"Normal weight progression is paused for this workout. The reduced deload load is the maximum recommendation, while pain or recovery rules may reduce it further."};
+  return{
+    ...recommendation,
+    weight:reducedWeight,
+    note:painRating>=2?`${recommendation.note}. Deload load cap applied.`:"Deload week — use the reduced load; normal progression resumes after the deload.",
+    progressionDecision:painRating>=2?recommendation.progressionDecision:{action:"deload",previousWeight:Number(prior?.weight??exercise.deloadPrescription.originalWeight??exercise.startWeight)||0,newWeight:reducedWeight,reason:deloadReason}
+  };
+}
+
 function recommendationFor(exercise) {
   const prior = latestExerciseResult(exercise);
-  if (!prior) {const starting=exercise.startingWeightRecommendation|| (Number(exercise.startWeight)>0?recommendationResult(exercise.startWeight,"Saved starting weight","Saved with this workout prescription.","medium",false):startingWeightRecommendation(exercise));return{weight:starting.weight,note:starting.label,starting};}
+  if (!prior) {const starting=exercise.startingWeightRecommendation|| (Number(exercise.startWeight)>0?recommendationResult(exercise.startWeight,"Saved starting weight","Saved with this workout prescription.","medium",false):startingWeightRecommendation(exercise));return applyDeloadRecommendation(exercise,{weight:starting.weight,note:starting.label,starting},null);}
 
   const completed = prior.sets.filter(s => s.done);
   const allAtTop = completed.length === prior.sets.length && completed.every(s => s.reps >= exercise.maxReps);
@@ -328,7 +342,7 @@ function recommendationFor(exercise) {
   if (pain.rating === 4) recommendation = { weight: Math.max(0, Math.round(Number(prior.weight) * .825 / 2.5) * 2.5), note: "Significant pain — replacement recommended", pain };
   if (pain.rating >= 5) recommendation = { weight: 0, note: "Severe pain — replacement or skip required", pain };
   if (pain.rating >= 2) progressionDecision = { action: pain.rating >= 3 ? "cut-back" : "hold", previousWeight: Number(prior.weight), newWeight: recommendation.weight, reason: FleemanProgressionReasons.create(FleemanProgressionReasons.CODES.PAIN_REPORTED, { exerciseId: exercise.id, painRating: pain.rating, joints: [...(pain.joints || [])] }) };
-  return { ...recommendation, pain: recommendation.pain || pain, progressionDecision };
+  return applyDeloadRecommendation(exercise,{ ...recommendation, pain: recommendation.pain || pain, progressionDecision },prior);
 }
 
 function renderAll() {
@@ -1775,7 +1789,7 @@ if ("serviceWorker" in navigator) {
   });
   window.addEventListener("load", async () => {
     try {
-      const registration = await navigator.serviceWorker.register("service-worker.js?v=72");
+      const registration = await navigator.serviceWorker.register("service-worker.js?v=81");
       if (!registration) return;
       if (registration.waiting && navigator.serviceWorker.controller) {
         waitingServiceWorker = registration.waiting;
