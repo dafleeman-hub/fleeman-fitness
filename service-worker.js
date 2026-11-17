@@ -1,6 +1,6 @@
 
-const CACHE = "fleeman-fitness-v82";
-const CORE_ASSETS = ["./", "./index.html", "./styles.css?v=82", "./exercise-library.js?v=75", "./bodyweight-exercises.js?v=75", "./workout-classifier.js?v=75", "./schedule-utils.js?v=79", "./active-workout-utils.js?v=75", "./program-templates.js?v=75", "./starting-weight-rules.js?v=75", "./validation.js?v=75", "./hybrid-config.js?v=75", "./progression-reasons.js?v=78", "./hybrid-stress.js?v=78", "./hybrid-strength-adapter.js?v=78", "./hybrid-progression.js?v=78", "./hybrid-recovery.js?v=75", "./hybrid-scheduler.js?v=78", "./app.js?v=82", "./live-workout.js?v=80", "./mesocycles.js?v=81", "./rolling-cycles.js?v=80", "./builder-reliability.js?v=75", "./fitness-enhancements.js?v=81", "./build-modes.js?v=75", "./hybrid-ui.js?v=79"];
+const CACHE = "fleeman-fitness-v84";
+const CORE_ASSETS = ["./", "./index.html", "./styles.css?v=82", "./exercise-library.js?v=75", "./bodyweight-exercises.js?v=75", "./workout-classifier.js?v=75", "./schedule-utils.js?v=79", "./active-workout-utils.js?v=75", "./program-templates.js?v=75", "./starting-weight-rules.js?v=75", "./validation.js?v=75", "./hybrid-config.js?v=75", "./progression-reasons.js?v=78", "./hybrid-stress.js?v=78", "./hybrid-strength-adapter.js?v=78", "./hybrid-progression.js?v=78", "./hybrid-recovery.js?v=75", "./hybrid-scheduler.js?v=78", "./app.js?v=84", "./live-workout.js?v=80", "./mesocycles.js?v=83", "./rolling-cycles.js?v=84", "./builder-reliability.js?v=75", "./fitness-enhancements.js?v=81", "./build-modes.js?v=75", "./hybrid-ui.js?v=79"];
 const OPTIONAL_ASSETS = ["./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png"];
 self.addEventListener("install", event => event.waitUntil(
   caches.open(CACHE).then(async cache => {

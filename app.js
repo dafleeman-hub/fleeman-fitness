@@ -1,6 +1,6 @@
 
 const STORAGE_KEY = "fleemanFitnessDataV1";
-const APP_VERSION = "1.9.4-prototype";
+const APP_VERSION = "1.9.6-prototype";
 let previewReturnFocus = null;
 let previewScrollPosition = 0;
 let workoutEditorContext = null;
@@ -321,7 +321,16 @@ function applyDeloadRecommendation(exercise,recommendation,prior=null) {
 
 function recommendationFor(exercise) {
   const prior = latestExerciseResult(exercise);
-  if (!prior) {const starting=exercise.startingWeightRecommendation|| (Number(exercise.startWeight)>0?recommendationResult(exercise.startWeight,"Saved starting weight","Saved with this workout prescription.","medium",false):startingWeightRecommendation(exercise));return applyDeloadRecommendation(exercise,{weight:starting.weight,note:starting.label,starting},null);}
+  if (!prior) {
+    if(exercise.deloadPrescription?.active){
+      const originalWeight=Math.max(0,Number(exercise.deloadPrescription.originalWeight??exercise.startWeight)||0);
+      const source=exercise.startingWeightRecommendation||recommendationResult(originalWeight,"Saved starting weight","Saved with this workout prescription.","medium",false);
+      const starting={...source,weight:originalWeight};
+      return applyDeloadRecommendation(exercise,{weight:originalWeight,note:starting.label,starting},null);
+    }
+    const starting=exercise.startingWeightRecommendation|| (Number(exercise.startWeight)>0?recommendationResult(exercise.startWeight,"Saved starting weight","Saved with this workout prescription.","medium",false):startingWeightRecommendation(exercise));
+    return applyDeloadRecommendation(exercise,{weight:starting.weight,note:starting.label,starting},null);
+  }
 
   const completed = prior.sets.filter(s => s.done);
   const allAtTop = completed.length === prior.sets.length && completed.every(s => s.reps >= exercise.maxReps);
@@ -1139,7 +1148,9 @@ function previewExerciseMarkup(exercise, index, originalExercise = null, adjustm
   const rest = Number(exercise.rest ?? data.settings.rest ?? 90);
   const weight = Number(rec.weight ?? exercise.startWeight ?? 0);
   const changed = originalExercise && ["sets", "startWeight", "targetRir", "minReps", "maxReps"].some(field => Number(originalExercise[field] ?? 0) !== Number(exercise[field] ?? 0));
-  const originalWeight = Number(originalExercise?.startWeight ?? 0);
+  const originalWeight = Number(exercise.deloadPrescription?.active
+    ? exercise.deloadPrescription.originalWeight
+    : originalExercise?.startWeight ?? 0);
   return `<article class="preview-exercise">
     <h3>${index + 1}. ${escapeHtml(exercise.name)}</h3>
     <p><strong>Muscles:</strong> ${muscles.map(sorenessLabel).join(", ") || escapeHtml(exercise.muscle || "Other")}</p>
@@ -1387,7 +1398,7 @@ function beginWorkout(id, sorenessRecord, context = pendingWorkoutContext, decis
       if (pain.rating === 4) plannedRir = Math.max(4, plannedRir);
       if (pain.rating >= 4) plannedSets = 0;
       const hybridHeldWeight = context?.scheduleType === "hybrid" && context.hybridAdjustment?.holdProgression
-        ? Number(latestExerciseResult(e)?.weight ?? e.startWeight ?? rec.weight)
+        ? Number(latestExerciseResult(e)?.weight ?? rec.weight ?? e.startWeight)
         : null;
       const progressionDecision = hybridHeldWeight != null
         ? context.hybridAdjustment?.progressionDecision || { action: "deferred", reason: FleemanProgressionReasons.create(FleemanProgressionReasons.CODES.HYBRID_CONFLICT, { exerciseId: e.id }) }
@@ -1832,7 +1843,7 @@ if ("serviceWorker" in navigator) {
   });
   window.addEventListener("load", async () => {
     try {
-      const registration = await navigator.serviceWorker.register("service-worker.js?v=82");
+      const registration = await navigator.serviceWorker.register("service-worker.js?v=84");
       if (!registration) return;
       if (registration.waiting && navigator.serviceWorker.controller) {
         waitingServiceWorker = registration.waiting;

@@ -377,7 +377,31 @@ function wireActiveMesoButtons(active){if(!active)return;document.querySelector(
 
 function renderMesoCollection(selector,items,type){const el=document.querySelector(selector);el.innerHTML=items.length?"":`<div class="panel"><p>No ${type} mesocycles.</p></div>`;items.forEach(m=>{const card=document.createElement("div");card.className="mesocycle-card";const summary=m.summary?`<p>${m.summary.completed}/${m.summary.planned} workouts • ${m.summary.percentage}% • ${m.summary.sets} sets • ${m.summary.improved} exercises improved${m.summary.pain.length?` • Pain flags: ${m.summary.pain.map(escapeHtml).join(", ")}`:""}</p>`:"";card.innerHTML=`<h3>${escapeHtml(m.name)}</h3><p>${m.totalWeeks} weeks • ${m.daysPerWeek} days/week</p>${summary}<div class="card-actions"><button class="secondary-button open">${type==="draft"?"Continue editing":"View"}</button>${type==="completed"?'<button class="secondary-button duplicate">Duplicate</button>':""}</div>`;card.querySelector(".open").onclick=()=>openMesocycleBuilder(m);card.querySelector(".duplicate")?.addEventListener("click",()=>duplicateMesocycle(m));el.appendChild(card);});}
 
-function workoutForMesoSlot(meso,next,persist=true){let workout=structuredClone(next.plan.workout);if(isDeloadWeek(meso,next.week)){workout.id=`${workout.id}-deload-${meso.id}`;workout.name=`Deload — ${workout.name}`;workout.exercises=workout.exercises.map(e=>{const originalWeight=Math.max(0,Number(e.startWeight)||0),reducedWeight=Math.round(originalWeight*.85/2.5)*2.5;return{...e,id:`${e.id}-deload`,sets:Math.ceil(e.sets/2),startWeight:reducedWeight,targetRir:Math.max(4,e.targetRir),deloadPrescription:{active:true,loadMultiplier:.85,originalWeight,reducedWeight}};});}if(persist)ensureWorkoutTemplate(workout);return workout;}
+function latestCompletedWorkingWeight(exercise){
+  const prior=latestExerciseResult(exercise);
+  if(!prior||prior.skipped||!(prior.sets||[]).some(set=>set.done))return null;
+  const completedSet=(prior.sets||[]).find(set=>set.done&&Number(set.weight)>0);
+  const weight=Number(prior.weight??completedSet?.weight);
+  return Number.isFinite(weight)&&weight>0?weight:null;
+}
+
+function workoutForMesoSlot(meso,next,persist=true){
+  let workout=structuredClone(next.plan.workout);
+  if(isDeloadWeek(meso,next.week)){
+    workout.id=`${workout.id}-deload-${meso.id}`;
+    workout.name=`Deload — ${workout.name}`;
+    workout.exercises=workout.exercises.map(e=>{
+      const historyWeight=latestCompletedWorkingWeight(e);
+      const originalWeight=historyWeight??Math.max(0,Number(e.startWeight)||0);
+      const definition=definitionForExercise(e);
+      const increment=Math.max(.5,Number(e.increment??definition?.defaults?.weightIncrement??data.settings.increment)||2.5);
+      const reducedWeight=Math.max(0,Math.round(originalWeight*.85/increment)*increment);
+      return{...e,id:`${e.id}-deload`,sets:Math.ceil(e.sets/2),startWeight:reducedWeight,targetRir:Math.max(4,e.targetRir),deloadPrescription:{active:true,loadMultiplier:.85,originalWeight,reducedWeight,baselineSource:historyWeight!=null?"exercise-history":"planned-prescription"}};
+    });
+  }
+  if(persist)ensureWorkoutTemplate(workout);
+  return workout;
+}
 function mesoOccurrenceContext(meso,occurrence){return{mesocycleId:meso.id,scheduleType:meso.scheduleType||"weekly",week:occurrence.week,slot:occurrence.slot,plannedWorkoutId:occurrence.plan.workout.id,occurrenceId:occurrence.occurrenceId||`${occurrence.week}:${occurrence.slot}`,scheduledDate:occurrence.dateKey||FleemanSchedule.dateKey(FleemanSchedule.weeklyOccurrenceDate(meso,occurrence.week,occurrence.slot)),wasMissed:occurrence.status==="missed"};}
 function previewNextMesoWorkout(meso,trigger){const next=nextMesoSlot(meso);if(!next)return;const workout=workoutForMesoSlot(meso,next,false);const deload=isDeloadWeek(meso,next.week);openWorkoutPreview(workout,{trigger,originalWorkout:deload?next.plan.workout:null,adjustmentReason:deload?"Deload week: sets and load are reduced and target RIR is increased.":"Current mesocycle prescription with progression and approved pain recommendations.",context:mesoOccurrenceContext(meso,next),startAction:()=>startNextMesoWorkout(meso)});}
 function startNextMesoWorkout(meso){const next=nextMesoSlot(meso);if(!next)return;const workout=workoutForMesoSlot(meso,next);startWorkout(workout.id,mesoOccurrenceContext(meso,next));}

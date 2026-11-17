@@ -665,13 +665,27 @@ workoutForMesoSlot = function (mesocycle, next, persist = true) {
   if (isDeloadWeek(mesocycle, next.cycle)) {
     workout.id = `${workout.id}-deload-${mesocycle.id}`;
     workout.name = `Deload — ${workout.name}`;
-    workout.exercises = workout.exercises.map(exercise => ({
-      ...exercise,
-      id: `${exercise.id}-deload`,
-      sets: Math.max(1, Math.ceil(Number(exercise.sets) / 2)),
-      startWeight: Math.max(0, Math.round(Number(exercise.startWeight || 0) * .85 / 2.5) * 2.5),
-      targetRir: Math.max(4, Number(exercise.targetRir ?? 3))
-    }));
+    workout.exercises = workout.exercises.map(exercise => {
+      const historyWeight = latestCompletedWorkingWeight(exercise);
+      const originalWeight = historyWeight ?? Math.max(0, Number(exercise.startWeight) || 0);
+      const definition = definitionForExercise(exercise);
+      const increment = Math.max(.5, Number(exercise.increment ?? definition?.defaults?.weightIncrement ?? data.settings.increment) || 2.5);
+      const reducedWeight = Math.max(0, Math.round(originalWeight * .85 / increment) * increment);
+      return {
+        ...exercise,
+        id: `${exercise.id}-deload`,
+        sets: Math.max(1, Math.ceil(Number(exercise.sets) / 2)),
+        startWeight: reducedWeight,
+        targetRir: Math.max(4, Number(exercise.targetRir ?? 3)),
+        deloadPrescription: {
+          active: true,
+          loadMultiplier: .85,
+          originalWeight,
+          reducedWeight,
+          baselineSource: historyWeight != null ? "exercise-history" : "planned-prescription"
+        }
+      };
+    });
   }
   if (persist) ensureWorkoutTemplate(workout);
   return workout;
