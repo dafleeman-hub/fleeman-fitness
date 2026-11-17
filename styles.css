@@ -834,6 +834,16 @@ h3 { font-size: 1.12rem; line-height: 1.1; text-transform: uppercase; letter-spa
 }
 .segmented-progress > span.complete { background: var(--accent); box-shadow: 0 0 9px rgba(255,90,10,.25); }
 .hero-actions { grid-template-columns: minmax(104px, auto) minmax(0, 1fr); }
+.no-active-plan-actions {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(210px, .8fr) auto;
+  gap: 9px;
+  align-items: center;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.dashboard-hero.no-active-plan > p { max-width: 720px; }
+.dashboard-hero.no-active-plan .ghost-button { padding-inline: 14px; white-space: nowrap; }
 
 .primary-button, .secondary-button, .danger-button, .ghost-button, .file-button {
   min-height: 46px;
@@ -1131,6 +1141,8 @@ dialog { width: min(920px, 100%); }
   .hero-elapsed-metric strong { font-size: 1.3rem; }
   .hero-actions { grid-template-columns: 1fr; }
   .hero-actions .secondary-button { order: 2; }
+  .no-active-plan-actions { grid-template-columns: 1fr; }
+  .dashboard-hero.no-active-plan .ghost-button { white-space: normal; }
   .dashboard-panel { padding: 14px; }
   .stats-grid { gap: 6px; }
   .stat { padding-inline: 5px; }

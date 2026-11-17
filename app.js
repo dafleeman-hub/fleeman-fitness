@@ -1,6 +1,6 @@
 
 const STORAGE_KEY = "fleemanFitnessDataV1";
-const APP_VERSION = "1.9.3-prototype";
+const APP_VERSION = "1.9.4-prototype";
 let previewReturnFocus = null;
 let previewScrollPosition = 0;
 let workoutEditorContext = null;
@@ -434,6 +434,7 @@ function renderHome() {
   const todaySummary = document.querySelector("#todayWorkoutSummary");
   if (todaySummary?.textContent.includes("Programs")) todaySummary.textContent = todaySummary.textContent.replace("Programs", "Build");
   renderTodayDashboard();
+  renderNoActivePlanHome();
 }
 
 function dashboardSavedSession() {
@@ -449,8 +450,47 @@ function dashboardWorkoutContext() {
     const next = nextMesoSlot(meso);
     if (next) return { workout: next.plan.workout, paused: null, context: typeof mesoOccurrenceContext==="function"?mesoOccurrenceContext(meso,next):{ mesocycleId: meso.id, week: next.week, slot: next.slot } };
   }
-  const selected = data.workouts.find(workout => workout.id === data.selectedWorkoutId) || null;
-  return { workout: selected, paused: null, context: null };
+  return { workout: null, paused: null, context: null };
+}
+
+function openLastMesocycleReviewFromHome() {
+  if (!data.mesocycles?.completed?.length) return;
+  activateAppView("historyView", { scroll: false, focus: false });
+  const completedList = document.querySelector("#completedMesocycles");
+  const heading = completedList?.previousElementSibling?.querySelector("h3");
+  requestAnimationFrame(() => {
+    (heading || completedList)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (heading) { heading.tabIndex = -1; heading.focus({ preventScroll: true }); }
+  });
+}
+
+function renderNoActivePlanHome() {
+  const hero = document.querySelector("#homeView .dashboard-hero");
+  const normalActions = hero?.querySelector(".hero-actions");
+  const emptyActions = document.querySelector("#noActivePlanActions");
+  const metrics = hero?.querySelector(".hero-metrics");
+  const hasActivePlan = Boolean(data.mesocycles?.active || data.hybridPrograms?.active);
+  const showEmptyState = Boolean(hero && !hasActivePlan && !dashboardSavedSession());
+
+  hero?.classList.toggle("no-active-plan", showEmptyState);
+  normalActions?.classList.toggle("hidden", showEmptyState);
+  emptyActions?.classList.toggle("hidden", !showEmptyState);
+  metrics?.classList.toggle("hidden", showEmptyState);
+  if (!showEmptyState) return;
+
+  document.querySelector("#todaySessionBadge").textContent = "NO ACTIVE TRAINING PLAN";
+  document.querySelector("#todayMesoMeta").textContent = "SCHEDULE OPEN";
+  document.querySelector("#todayWorkoutName").textContent = "READY FOR YOUR NEXT BLOCK?";
+  document.querySelector("#todayWorkoutSummary").textContent = data.mesocycles?.completed?.length
+    ? "Your previous mesocycle is complete. Build your next training plan, or choose a one-time workout when you are ready."
+    : "Build your first training plan, or choose a one-time workout when you are ready.";
+  document.querySelector("#weekDashboardSummary").textContent = "No workouts scheduled";
+  const progressionWhy = document.querySelector("#todayProgressionWhy");
+  progressionWhy.innerHTML = "";
+  progressionWhy.classList.add("hidden");
+
+  const reviewButton = document.querySelector("#reviewLastMesocycleFromHomeButton");
+  reviewButton.classList.toggle("hidden", !data.mesocycles?.completed?.length);
 }
 
 function dashboardExerciseDefinition(exercise) {
@@ -1592,6 +1632,9 @@ document.querySelector("#startWorkoutButton").onclick = () => {
   if (data.selectedWorkoutId) startWorkout(data.selectedWorkoutId);
   else document.querySelector('[data-view="builderView"]').click();
 };
+document.querySelector("#buildNewPlanFromHomeButton").onclick = () => activateAppView("programsView");
+document.querySelector("#oneTimeWorkoutFromHomeButton").onclick = () => activateAppView("builderView", { librarySection: "workouts" });
+document.querySelector("#reviewLastMesocycleFromHomeButton").onclick = openLastMesocycleReviewFromHome;
 document.querySelector("#newWorkoutButton").onclick = () => openWorkoutEditor();
 document.querySelector("#closeWorkoutEditorButton").onclick = cancelWorkoutEditor;
 document.querySelector("#workoutDialog").addEventListener("cancel", event => { event.preventDefault(); cancelWorkoutEditor(); });
@@ -1789,7 +1832,7 @@ if ("serviceWorker" in navigator) {
   });
   window.addEventListener("load", async () => {
     try {
-      const registration = await navigator.serviceWorker.register("service-worker.js?v=81");
+      const registration = await navigator.serviceWorker.register("service-worker.js?v=82");
       if (!registration) return;
       if (registration.waiting && navigator.serviceWorker.controller) {
         waitingServiceWorker = registration.waiting;

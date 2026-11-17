@@ -10,7 +10,7 @@
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <link rel="icon" href="icons/icon-192.png" type="image/png" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="styles.css?v=78" />
+  <link rel="stylesheet" href="styles.css?v=82" />
   <title>Fleeman Fitness</title>
 </head>
 <body>
@@ -63,6 +63,11 @@
         <div class="hero-actions">
           <button id="previewTodayWorkoutButton" class="secondary-button hidden">Preview</button>
           <button id="startWorkoutButton" class="primary-button">Choose workout</button>
+        </div>
+        <div id="noActivePlanActions" class="no-active-plan-actions hidden" aria-label="Choose what to do next">
+          <button id="buildNewPlanFromHomeButton" class="primary-button" type="button">Build a new plan</button>
+          <button id="oneTimeWorkoutFromHomeButton" class="secondary-button" type="button">Do a one-time workout</button>
+          <button id="reviewLastMesocycleFromHomeButton" class="ghost-button" type="button">Review last mesocycle</button>
         </div>
       </div>
 
@@ -544,7 +549,7 @@
   <script src="hybrid-progression.js?v=78"></script>
   <script src="hybrid-recovery.js?v=75"></script>
   <script src="hybrid-scheduler.js?v=78"></script>
-  <script src="app.js?v=81"></script>
+  <script src="app.js?v=82"></script>
   <script src="live-workout.js?v=80"></script>
   <script src="mesocycles.js?v=81"></script>
   <script src="rolling-cycles.js?v=80"></script>
